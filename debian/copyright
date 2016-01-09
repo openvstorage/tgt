@@ -1,0 +1,40 @@
+This package was debianized by Frederik Schüler <fs@debian.org> on
+Tue, 07 Aug 2007 01:33:34 +0200.
+
+It was downloaded from http://stgt.berlios.de/releases/
+
+Upstream Authors: 
+
+	Mike Christie <michaelc@cs.wisc.edu>
+	FUJITA Tomonori <tomof@acm.org>
+
+Copyright: 
+
+    Copyright © 2005-2007 FUJITA Tomonori and Mike Christie
+
+    Digest implementations for iSCSI are
+    Copyright © 1995,1996,1998,1999,2001,2002,2003,2008
+    Free Software Foundation, Inc.
+
+License:
+
+    This package is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 2 of the License.
+ 
+    This package is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+ 
+    You should have received a copy of the GNU General Public License
+    along with this package; if not, write to the Free Software
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+
+On Debian systems, the complete text of the GNU General Public License
+version 2 can be found in `/usr/share/common-licenses/GPL-2'.
+
+The Debian packaging is © 2007, Frederik Schüler <fs@debian.org> and
+is licensed under the GPL, version 2 or (at your option) any later
+version.
+

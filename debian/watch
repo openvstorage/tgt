@@ -1,0 +1,2 @@
+version=3
+https://github.com/fujita/tgt/tags .*/v(.*).tar.gz

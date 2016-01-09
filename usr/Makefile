@@ -17,6 +17,10 @@ ifneq ($(CEPH_RBD),)
 MODULES += bs_rbd.so
 endif
 
+ifneq ($(shell test -e /usr/include/openvstorage/volumedriver.h && echo 1),)
+MODULES += bs_openvstorage.so
+endif
+
 ifneq ($(shell test -e /usr/include/sys/eventfd.h && test -e /usr/include/libaio.h && echo 1),)
 CFLAGS += -DUSE_EVENTFD
 TGTD_OBJS += bs_aio.o
@@ -87,6 +91,9 @@ tgtimg: $(TGTIMG_OBJS)
 
 bs_rbd.so: bs_rbd.c
 	$(CC) -shared $(CFLAGS) bs_rbd.c -o bs_rbd.so -lrados -lrbd
+
+bs_openvstorage.so: bs_openvstorage.c
+	$(CC) -shared $(CFLAGS) bs_openvstorage.c -o bs_openvstorage.so -lovsvolumedriver -L/usr/lib/openvstorage
 
 .PHONY: install
 install: $(PROGRAMS) $(MODULES)

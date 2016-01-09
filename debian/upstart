@@ -1,0 +1,11 @@
+description	"tgt daemon"
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+expect fork
+respawn
+
+exec tgtd
+
+post-start exec /usr/sbin/tgt-admin -e

@@ -1,0 +1,13 @@
+#!/bin/bash
+#------------
+# Testing tgt
+#------------
+set -e
+DAEMON=tgtd
+
+if pidof -x $DAEMON > /dev/null; then
+    echo "OK"
+else
+    echo "ERROR: ${DAEMON} IS NOT RUNNING"
+    exit 1
+fi

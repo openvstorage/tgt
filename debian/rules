@@ -1,0 +1,14 @@
+#!/usr/bin/make -f
+#export DH_VERBOSE=1
+
+CFLAGS = -Wall -g
+TGT_OPTIONS = FCOE=1 ISCSI=1 ISCSI_RDMA=1 CEPH_RBD=1
+
+%:
+	dh $@ --parallel --with bash-completion
+
+override_dh_auto_build:
+	dh_auto_build -- $(TGT_OPTIONS)
+
+override_dh_auto_install:
+	dh_auto_install -- $(TGT_OPTIONS)
