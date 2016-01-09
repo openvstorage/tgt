@@ -1,0 +1,3 @@
+Tests: daemon admin
+Depends: @
+Restrictions: needs-root

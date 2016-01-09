@@ -1,0 +1,13 @@
+#!/bin/bash
+#---------------
+# Testing tgtadm
+#---------------
+set -e
+ADMIN=tgtadm
+$ADMIN --help > /dev/null 2>&1
+RET=$?
+
+if [[ $RET != 0 ]]; then
+  echo "ERROR, ${ADMIN} is not running"
+  exit $RET
+fi

@@ -1,0 +1,273 @@
+tgt (1:1.0.43-0ubuntu4.1~14.04.2ubuntu1) trusty; urgency=medium
+
+  * OpenvStorage backing store support
+
+ -- Chrysostomos Nanakos <cnanakos@openvstorage.com>  Sat, 09 Jan 2016 13:34:10 +0200
+
+tgt (1:1.0.43-0ubuntu4.1~14.04.2) trusty; urgency=high
+
+  * debian/patches/fix-read-response-buffer.patch : Fix bug to read 
+    the response buffer (LP: #1498697)
+
+ -- Eric Desrochers <eric.desrochers@canonical.com>  Wed, 30 Sep 2015 11:41:52 -0500
+
+tgt (1:1.0.43-0ubuntu4.1~14.04.1) trusty; urgency=medium
+
+  * iSER: Add Discovery support (LP: #1409904)
+
+ -- Rafael David Tinoco <rafael.tinoco@canonical.com>  Wed, 05 Aug 2015 17:21:17 -0500
+
+tgt (1:1.0.43-0ubuntu4) trusty; urgency=medium
+
+  * debian/patches/fix_delayed_management_request.patch: Adjust patch to fix
+    a FTBFS.
+  * debian/patches/fix_leak_of_task_in_scsi_flag.patch: Adjust patch to fix
+    a FTBFS.
+
+ -- Chuck Short <zulcss@ubuntu.com>  Fri, 11 Apr 2014 09:14:03 -0400
+
+tgt (1:1.0.43-0ubuntu3) trusty; urgency=medium
+
+  * Fix tgt connection issues under heavy load (LP: #1305343)
+    - debian/patches/fix_delayed_management_request.patch: Fix a crash
+      of tgtd which occured when removing a target with the --force option
+      (https://github.com/fujita/tgt/commit/e6e8d0fd3b83208278fb7ed765c3665ae7c5ab49)
+    - debian/patches/fix_leak_of_task_in_scsi_flag.patch: Clear task_in_scsi flag 
+      when exiting iscsi_tm_execute() and iser_tm_exec() functions. 
+      (https://github.com/fujita/tgt/commit/05fc2cb424863fbf2f3c60a8b617308ef1e370c5)
+
+ -- Chuck Short <zulcss@ubuntu.com>  Wed, 09 Apr 2014 19:35:20 -0400
+
+tgt (1:1.0.43-0ubuntu2) trusty; urgency=medium
+
+  * d/p/fix-config-regression.patch: Cherry picked fix from upstream VCS
+    to resolve regression on configuration of control port.
+
+ -- James Page <james.page@ubuntu.com>  Tue, 14 Jan 2014 15:11:35 +0000
+
+tgt (1:1.0.43-0ubuntu1) trusty; urgency=medium
+
+  * New upstream release.
+
+ -- James Page <james.page@ubuntu.com>  Tue, 14 Jan 2014 12:05:08 +0000
+
+tgt (1:1.0.41-0ubuntu1) trusty; urgency=low
+
+  * New upstream release:
+    - debian/patches/fix-tgt-admin-bashism: Dropped, included upstream.
+  * d/control,rules,bash-completion: Enable bash completion support
+    for tgt commands.
+
+ -- James Page <james.page@ubuntu.com>  Mon, 11 Nov 2013 15:00:10 +0000
+
+tgt (1:1.0.38-0ubuntu1) saucy; urgency=low
+
+  * New upstream release:
+    - d/p/include-rbd-docs.patch,example-config-use-conf-dot-dee:
+      Dropped, included upstream.
+    - Refreshed other patches.
+  * d/watch: Really update to track github repository for releases.
+
+ -- James Page <james.page@ubuntu.com>  Tue, 06 Aug 2013 17:38:27 +0100
+
+tgt (1:1.0.37-0ubuntu1) saucy; urgency=low
+
+  * Merge from Debian unstable:
+    - d/control: Drop depends on lsb-base; handled by debhelper.
+  * d/watch: Updated to track github upstream repository.
+  * New upstream release (LP: #1191180):
+    - d/control: Add xsltproc and docbook-xsl to BD's.
+    - d/p: Refreshed and tidied patches.
+  * Enable support for Ceph RBD backend:
+    - d/rules: Add CEPH_RBD=1 to options.
+    - d/control: Add BD on librbd-dev.
+    - d/p/include-rbd-docs.patch: Include README.rbd docs.
+  * Switch to debhelper compat level 8:
+    - d/rules: Rewrite to use debhelper overrides.
+    - d/compat,control: Bump compat level and minimum version
+      requirement for debhelper.
+
+ -- James Page <james.page@ubuntu.com>  Tue, 18 Jun 2013 13:08:34 +0100
+
+tgt (1:1.0.17-1.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Adds an init script:
+    - Depends: lsb-base
+    - Adds dh_installinit call in debian/rules
+    - adds debian/init
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 11 Apr 2013 23:25:08 +0800
+
+tgt (1:1.0.17-1ubuntu4) saucy; urgency=low
+
+  * d/tests: added dep-8-tests
+
+ -- Yolanda <yolanda.robla@canonical.com>  Tue, 21 May 2013 10:41:18 +0200
+
+tgt (1:1.0.17-1ubuntu3) quantal; urgency=low
+
+  * Rebuild for new armel compiler default of ARMv5t.
+
+ -- Colin Watson <cjwatson@ubuntu.com>  Mon, 08 Oct 2012 23:02:42 +0100
+
+tgt (1:1.0.17-1ubuntu2) precise; urgency=low
+
+  * change /etc/tgt/tgt.conf to support adding config.d format
+    snippets in /etc/tgt/conf.d (LP: #978507)
+  * start tgt on installation (LP: #977621)
+  * stop tgt on shutdown (LP: #820699)
+
+ -- Scott Moser <smoser@ubuntu.com>  Tue, 10 Apr 2012 23:11:00 -0400
+
+tgt (1:1.0.17-1ubuntu1) oneiric; urgency=low
+
+  * Merge from debian remaining changes: 
+    - debian/usptart: Add upstart job.
+    - Dropped:
+      - debian/patches/CVE-2011-0001.patch: No longer needed, use debian instead.
+
+ -- Chuck Short <zulcss@ubuntu.com>  Mon, 08 Aug 2011 04:45:03 -0400
+
+tgt (1:1.0.17-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Frederik Schüler <fs@debian.org>  Tue, 21 Jun 2011 11:44:56 +0200
+
+tgt (1:1.0.4-3) unstable; urgency=high
+
+  * iscsi: fix buffer overflow before login (CVE-2011-0001)
+
+ -- Ben Hutchings <ben@decadent.org.uk>  Mon, 21 Mar 2011 03:32:59 +0000
+
+tgt (1:1.0.13-0ubuntu3) oneiric; urgency=low
+
+  * SECURITY UPDATE: denial of service and possible code execution via
+    double free in iscsi_rx_handler function
+    - debian/patches/CVE-2011-0001.patch: make sure the received data isn't
+      larger than INCOMING_BUFSIZE in usr/iscsi/iscsid.c.
+    - CVE-2011-0001
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 21 Jun 2011 09:01:03 -0400
+
+tgt (1:1.0.13-0ubuntu2) natty; urgency=low
+
+  * debian/upstart: Add respawn to upstart job. (LP: #715686) 
+
+ -- Chuck Short <zulcss@ubuntu.com>  Mon, 14 Feb 2011 10:31:26 -0500
+
+tgt (1:1.0.13-0ubuntu1) natty; urgency=low
+
+  * New upstream release.
+  * debian/patches/make-tgt-setup-lun-executable: Dropped no longer needed.
+
+ -- Chuck Short <zulcss@ubuntu.com>  Tue, 08 Feb 2011 10:31:04 -0500
+
+tgt (1:1.0.4-2ubuntu1) natty; urgency=low
+
+  * Merge from debian unstable.  Remaining changes:
+    - debian/upstart: Add upstart job.
+    - Dropped:
+      + debian/patches/scripts-tgt-admin: Use debian's instead.
+
+ -- Chuck Short <zulcss@ubuntu.com>  Fri, 10 Sep 2010 16:19:59 +0100
+
+tgt (1:1.0.4-2) unstable; urgency=low
+
+  * Fix bashism in tgt-admin, thanks to Chris Cheney (Closes: #589716)
+
+ -- Ben Hutchings <ben@decadent.org.uk>  Sun, 05 Sep 2010 22:13:52 +0100
+
+tgt (1:1.0.4-1ubuntu4) maverick; urgency=low
+
+  * debian/upstart: Corrected typo with post-start command; Resolving 
+    "unknown job" error. (LP: #574554)
+
+ -- Dave Walker (Daviey) <DaveWalker@ubuntu.com>  Mon, 09 Aug 2010 23:49:42 +0100
+
+tgt (1:1.0.4-1ubuntu3) maverick; urgency=low
+
+  * tgtd target will not start unless it's configured with "allow-in-use yes"
+    (LP: 605721)
+
+ -- Chris Cheney <ccheney@ubuntu.com>  Tue, 20 Jul 2010 04:29:56 -0500
+
+tgt (1:1.0.4-1ubuntu2) maverick; urgency=low
+
+  * debian/usptart: Add post-start exec to upstart script. (LP: #574554) 
+
+ -- Chuck Short <zulcss@ubuntu.com>  Fri, 16 Jul 2010 10:47:33 -0400
+
+tgt (1:1.0.4-1ubuntu1) maverick; urgency=low
+
+  * debian/rules, debian/tgt.tgtd.upstart: Add upstart script. (LP: #574554) 
+
+ -- Chuck Short <zulcss@ubuntu.com>  Thu, 17 Jun 2010 10:22:39 -0400
+
+tgt (1:1.0.4-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Frederik Schüler <fs@debian.org>  Wed, 05 May 2010 09:04:59 +0200
+
+tgt (1:1.0.3-2) unstable; urgency=low
+
+  * Fix Format string vulnerability CVE-2010-0743.
+    (Closes: #576086)
+
+ -- Frederik Schüler <fs@debian.org>  Tue, 13 Apr 2010 10:54:19 +0200
+
+tgt (1:1.0.3-1) unstable; urgency=low
+
+  * New upstream release.
+  * Update Standards-Version to 3.8.4, no changes needed.
+  * Drop patches/tgtadm-usage-metasyntax.
+  * Add parallel build ability to debian/rules.
+  * Add watch file.
+
+ -- Frederik Schüler <fs@debian.org>  Mon, 29 Mar 2010 13:09:33 +0200
+
+tgt (1:1.0.0-2) unstable; urgency=low
+
+  * Depend on sg3-utils. (Closes: #565168)
+
+ -- Frederik Schüler <fs@debian.org>  Tue, 19 Jan 2010 19:36:40 +0100
+
+tgt (1:1.0.0-1) unstable; urgency=low
+  
+  * New upstream release.
+    - Drop GPL digest patch, upstream has other implementation.
+  * Add dependency on libconfig-general-perl. (Closes: #560710)
+  * Build iSER driver, too.
+
+ -- Frederik Schüler <fs@debian.org>  Thu, 24 Dec 2009 16:34:17 +0100
+
+tgt (1:0.9.11-1) unstable; urgency=low
+
+  [ Ben Hutchings ]
+  * New upstream version (Closes: #501149)
+    - Adds -D_GNU_SOURCE to compiler options (Closes: #526562)
+  * Add myself to Uploaders
+  * Fix syntax of usage messages (Closes: #493375)
+  * Use GPL-compatible digest code instead of OpenSSL (Closes: #556294)
+  * Update Standards-Version to 3.8.3
+    - Add Homepage field
+  * Enable FCoE driver
+  * Update package description
+    - Fix grammar
+    - Mention 'SCSI' in the short description
+    - Update list of drivers
+
+  [ Frederik Schüler ]
+  * Switch to debhelper 7.
+
+ -- Frederik Schüler <fs@debian.org>  Wed, 09 Dec 2009 10:29:39 +0100
+
+tgt (20070924-1) unstable; urgency=low
+
+  [ Frederik Schüler ]
+  * Initial release (Closes: #436320)
+
+ -- Frederik Schüler <fs@debian.org>  Mon, 24 Sep 2007 20:04:05 +0200
+

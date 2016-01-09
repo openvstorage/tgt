@@ -1,0 +1,18 @@
+Description: Fix leak of task for delayed management request
+Author: Chuck Short <zulcss@ubuntu.com>
+Forwaded: Not needed
+diff -Naurp tgt-1.0.43.orig/usr/iscsi/iscsid.c tgt-1.0.43/usr/iscsi/iscsid.c
+--- tgt-1.0.43.orig/usr/iscsi/iscsid.c	2014-01-07 07:16:21.000000000 -0500
++++ tgt-1.0.43/usr/iscsi/iscsid.c	2014-04-11 09:09:50.693973485 -0400
+@@ -1428,6 +1428,11 @@ static int iscsi_tm_done(struct mgmt_req
+ 		task->result = ISCSI_TMF_RSP_REJECTED;
+ 		break;
+ 	}
++
++	if (task->conn->state == STATE_CLOSE) {
++		iscsi_free_task(task);
++		return 0;
++	}
+ 	list_add_tail(&task->c_list, &task->conn->tx_clist);
+ 	task->conn->tp->ep_event_modify(task->conn, EPOLLIN | EPOLLOUT);
+ 	return 0;

@@ -1,0 +1,6 @@
+conf-makefile
+fix-config-regression.patch
+fix_delayed_management_request.patch
+fix_leak_of_task_in_scsi_flag.patch
+add-iser-discovery-support.patch
+fix-read-response-buffer.patch
