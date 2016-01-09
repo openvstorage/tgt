@@ -1,0 +1,70 @@
+Introduction
+-------------
+Linux target framework (tgt) aims to simplify various SCSI target
+driver (iSCSI, Fibre Channel, SRP, etc) creation and maintenance.
+
+Currently, tgt supports the following target drivers:
+
+- iSCSI software target driver for Ethernet NICs
+
+- iSER software target driver for Infiniband and RDMA NICs
+
+- IBM System p VIO server
+
+- FCoE software target driver for Ethernet NICs (in progress)
+
+- Qlogic qla2xxx FC target driver (in progress)
+
+Tgt consists of kernel modules, user-space daemon, and user-space
+tools. iSCSI, iSER, and FCoE target drivers use only user-space daemon
+and tools (i.e. they are just user-space applications. They don't need
+any kernel support).
+
+tgt can emulate the following device types:
+
+- SBC: a virtual disk drive that can use a file to store the content.
+
+- SMC: a virtual media jukebox that can be controlled by the "mtx"
+tool.
+
+- MMC: a virtual DVD drive that can read DVD-ROM iso files and create
+burnable DVD+R. It can be combined with SMC to provide a fully
+operational DVD jukebox.
+
+- SSC: a virtual tape device (aka VTL) that can use a file to store
+the content.
+
+- OSD: a virtual object-based storage device that can use a file to
+store the content (in progress).
+
+The code is under the GNU General Public License version 2.
+
+
+Preparation
+-------------
+Linux kernel 2.6.22 or newer are recommended because tgt can get
+better performance with signalfd.
+
+Target drivers have their own ways to build, configure, etc. Please
+find an appropriate documentation in the doc directory. You might find
+other useful information on tgt's site:
+
+http://stgt.sourceforge.net/
+
+
+Developer Notes
+-------------
+The central resource for tgt development is the mailing list
+(stgt@vger.kernel.org).
+
+First, please read the following documents (in short, follow Linux
+kernel development rules):
+
+http://lxr.linux.no/source/Documentation/CodingStyle
+http://lxr.linux.no/source/Documentation/SubmittingPatches
+
+Then, check your patches with the patch style checker prior to
+submission (scripts/checkpatch.pl) like the following example.
+
+fujita@arbre:~/git/tgt$ ./scripts/checkpatch.pl ~/0001-add-bidi-support.patch
+Your patch has no obvious style problems and is ready for submission.
