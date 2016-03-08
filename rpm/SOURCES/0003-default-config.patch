@@ -1,0 +1,47 @@
+From ae49713dabee9befd1e8c43036c369a416099793 Mon Sep 17 00:00:00 2001
+From: Andy Grover <agrover@redhat.com>
+Date: Tue, 18 Jun 2013 13:43:22 -0700
+Subject: [PATCH 3/5] default-config
+
+---
+ scripts/initd.sample |    2 +-
+ scripts/tgt-admin    |    4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/scripts/initd.sample b/scripts/initd.sample
+index 9ca86ce..7b67722 100755
+--- a/scripts/initd.sample
++++ b/scripts/initd.sample
+@@ -13,7 +13,7 @@
+ # Description: tgtd provides the SCSI and software transport target state machine daemon.
+ ### END INIT INFO
+ 
+-TGTD_CONFIG=/etc/tgt/targets.conf
++TGTD_CONFIG=/etc/tgt/tgtd.conf
+ 
+ TASK=$1
+ 
+diff --git a/scripts/tgt-admin b/scripts/tgt-admin
+index d374172..bbae0dd 100755
+--- a/scripts/tgt-admin
++++ b/scripts/tgt-admin
+@@ -1,6 +1,6 @@
+ #!/usr/bin/perl
+ #
+-# This tools parses /etc/tgt/targets.conf file and configures tgt
++# This tools parses /etc/tgt/tgtd.conf file and configures tgt
+ #
+ # Author:  Tomasz Chmielewski
+ # License: GPLv2
+@@ -11,7 +11,7 @@ use Config::General qw(ParseConfig);
+ use Getopt::Long;
+ 
+ # Our config file
+-my $configfile = "/etc/tgt/targets.conf";
++my $configfile = "/etc/tgt/tgtd.conf";
+ 
+ sub usage {
+ 	print <<EOF;
+-- 
+1.7.1
+

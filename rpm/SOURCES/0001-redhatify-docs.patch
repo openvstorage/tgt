@@ -1,0 +1,183 @@
+From 0861a02865e8bb6d5960fc1bee2f94baa633c950 Mon Sep 17 00:00:00 2001
+From: Andy Grover <agrover@redhat.com>
+Date: Tue, 4 Oct 2011 11:32:38 -0700
+Subject: [PATCH 1/5] redhatify-docs
+
+---
+ README           |   23 ---------------------
+ doc/README.iscsi |   17 +++++++++------
+ doc/README.iser  |   57 ++++++++++++++++++------------------------------------
+ 3 files changed, 29 insertions(+), 68 deletions(-)
+
+diff --git a/README b/README
+index c3f505c..42d81a2 100644
+--- a/README
++++ b/README
+@@ -9,17 +9,6 @@ Currently, tgt supports the following target drivers:
+ 
+ - iSER software target driver for Infiniband and RDMA NICs
+ 
+-- IBM System p VIO server
+-
+-- FCoE software target driver for Ethernet NICs (in progress)
+-
+-- Qlogic qla2xxx FC target driver (in progress)
+-
+-Tgt consists of kernel modules, user-space daemon, and user-space
+-tools. iSCSI, iSER, and FCoE target drivers use only user-space daemon
+-and tools (i.e. they are just user-space applications. They don't need
+-any kernel support).
+-
+ tgt can emulate the following device types:
+ 
+ - SBC: a virtual disk drive that can use a file to store the content.
+@@ -40,18 +29,6 @@ store the content (in progress).
+ The code is under the GNU General Public License version 2.
+ 
+ 
+-Preparation
+--------------
+-Linux kernel 2.6.22 or newer are recommended because tgt can get
+-better performance with signalfd.
+-
+-Target drivers have their own ways to build, configure, etc. Please
+-find an appropriate documentation in the doc directory. You might find
+-other useful information on tgt's site:
+-
+-http://stgt.sourceforge.net/
+-
+-
+ Developer Notes
+ -------------
+ The central resource for tgt development is the mailing list
+diff --git a/doc/README.iscsi b/doc/README.iscsi
+index 4ff3028..b74a73a 100644
+--- a/doc/README.iscsi
++++ b/doc/README.iscsi
+@@ -1,25 +1,28 @@
+ Preface
+ -------------
+-This show a simple example to set up some targets.
++This shows a simple example to set up some targets.
++
++See man tgt-admin and the example /etc/tgt/targets.conf
++file for how to setup a persistent configuration that is
++started when the tgtd service is started (when "service tgtd start"
++is run).
+ 
+ 
+ Starting the daemon
+ -------------
+ The iSCSI target driver works with the 2.6.X kernels.
+ 
+-First, you need to compile the source code:
+-
+-host:~/tgt/usr$ make
+-
+ Try the following commands:
+ 
+ host:~/tgt$ su
+-host:~/tgt# ./usr/tgtd
++host:~/tgt# service tgtd start
+ 
+ 
+ Configuration
+ -------------
+-Everyting is configured via the tgtadm management tool.
++When started, the tgtd service will setup targets defined in
++/etc/tgt/targets.conf. To manually configure a target tgtadm
++or tgt-admin can be used.
+ 
+ The following example creates a target with id 1 (the iqn is
+ iqn.2001-04.com.example:storage.disk2.amiens.sys1.xyz) and adds a
+diff --git a/doc/README.iser b/doc/README.iser
+index 0f5fafd..7603d3c 100644
+--- a/doc/README.iser
++++ b/doc/README.iser
+@@ -1,5 +1,21 @@
+ *** iSCSI Extensions for RDMA (iSER) in tgt ***
+ 
++This is an detailed description of the iSER tgtd target. It
++covers issues from the design to how to manually set it up.
++
++NOTE:
++!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
++To run this iSER target you must have installed the libiverbs
++and librdma rpms on your system. They will not get brought in
++automatically when installing this rpm.
++!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
++
++See man tgt-admin and the example /etc/tgt/targets.conf
++file for how to setup a persistent configuration that is
++started when the tgtd service is started (when "service tgtd start"
++is run).
++
++
+ Copyright (C) 2007 Pete Wyckoff <pw@osc.edu>
+ Copyright (C) 2011 Alexander Nezhinsky <alexandern@voltaire.com>
+ 
+@@ -235,42 +251,7 @@ add padding either.
+ 
+ 3.  Using iSER
+ 
+-3.1.  Building tgtd
+-
+-Compile tgtd with:
+-
+-	make ISCSI_RDMA=1
+-
+-As iSCSI support is compiled in by default, there is no need to specify
+-additional symbols for it.
+-
+-For build purposes, you'll need to have two libraries installed
+-on your system: libibverbs-devel and librdmacm-devel.
+-
+-To run iser, you'lll need the binary form of these libraries,
+-libibverbs.so and librdmacm.so along with device specific user
+-space library such as libmlx4 for Mellanox ConnectX HCAs.
+-
+-If they are installed in the normal system paths (/usr/include and
+-/usr/lib or /usr/lib64), they will be found automatically. Otherwise,
+-edit CFLAGS and LIBS in usr/Makefile under ISER to specify the paths
+-by hand, e.g., for a /usr/local install, it should look like:
+-
+-	ifneq ($(ISCSI_RDMA),)
+-	CFLAGS += -DISCSI_RDMA -I/usr/local/include
+-	TGTD_OBJS += iscsi/iser.o
+-	LIBS += -L/usr/local/lib -libverbs -lrdmacm
+-	endif
+-
+-If these libraries are not in the normal system paths, you may
+-possibly also have to set, e.g., LD_LIBRARY_PATH=/usr/local/lib in
+-your environment to find the shared libraries at runtime.
+-
+-The libraries mentioned is this section have pre-set packages provided
+-the by various distributions, e.g RPMs for Fedora, RedHat and Suse,
+-or DEBs for Debian and Ubuntu.
+-
+-3.2.  Running tgtd
++3.1.  Running tgtd
+ 
+ Start the daemon (as root):
+ 
+@@ -294,7 +275,7 @@ It's recommended to use the rping tool provided by librdmacm-utils
+ for quick RDMA connectivity testing between the initiator and the
+ target nodes.
+ 
+-3.3.  Configuring tgtd
++3.2.  Configuring tgtd
+ 
+ Configure the running target with one or more devices, using the
+ tgtadm program you just built (also as root).  Full information is
+@@ -312,7 +293,7 @@ Here is a quick-start example:
+ 		 --bstype rdwr
+ 
+ 
+-3.4.  Initiator side
++3.3.  Initiator side
+ 
+ To make your initiator use RDMA, make sure the "ib_iser" module is
+ loaded in your kernel.	Then do discovery as usual, over TCP:
+-- 
+1.7.1
+
