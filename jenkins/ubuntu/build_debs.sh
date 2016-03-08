@@ -17,7 +17,7 @@ fi
 set -e
 
 echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections
-apt-get update -qq
+sudo apt-get update -qq
 
 ## we know we depend on the volumedriver-dev package, and we want latest greatest, so install from artifact
 
