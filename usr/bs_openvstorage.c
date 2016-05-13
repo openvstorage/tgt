@@ -4,28 +4,28 @@
  * Copyright (C) 2016 iNuron NV
  * Author: Chrysostomos Nanakos <cnanakos@openvstorage.com>
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation, version 2 of the
- * License.
+ * This file is part of Open vStorage Open Source Edition (OSE),
+ * as available from
  *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
+ *     http://www.openvstorage.org and
+ *     http://www.openvstorage.com.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301 USA
+ * This file is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Affero General Public License v3 (GNU AGPLv3)
+ * as published by the Free Software Foundation, in version 3 as it comes in
+ * the LICENSE.txt file of the Open vStorage OSE distribution.
+ * Open vStorage is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY of any kind.
  */
 #define _XOPEN_SOURCE 600
 
+#include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -39,6 +39,8 @@
 #include "scsi.h"
 #include "spc.h"
 #include "bs_thread.h"
+
+#define OVS_DFL_NETWORK_PORT    21321
 
 struct active_ovs
 {
@@ -74,7 +76,7 @@ static int bs_ovs_io(struct active_ovs *ai, OVSTGTCmd cmd, char *buf, int len,
     ovs_buf = ovs_allocate(ai->ioctx, len);
     if (ovs_buf == NULL)
     {
-        eprintf("%s: cannot allocate shm buffer (len: %d)\n",
+        eprintf("%s: cannot allocate buffer (len: %d)\n",
                 __func__,
                 len);
         return -1;
@@ -107,9 +109,7 @@ static int bs_ovs_io(struct active_ovs *ai, OVSTGTCmd cmd, char *buf, int len,
         }
         break;
     default:
-        eprintf("%s: unknown operation (cmd: %d)\n",
-                __func__,
-                cmd);
+        eprintf("%s: unknown operation (cmd: %d)\n", __func__, cmd);
         r = -1;
     }
 
@@ -183,31 +183,132 @@ static void bs_openvstorage_request(struct scsi_cmd *cmd)
     }
 }
 
-static int bs_openvstorage_open(struct scsi_lu *lu,
-                                char *path,
-                                int *fd,
-                                uint64_t *size)
+static int bs_openvstorage_parse_path_opt(const char *filename,
+                                          char **host,
+                                          int *port,
+                                          char **volume_name)
+{
+    char *endptr, *inetaddr, *h;
+    char *tokens[2], *ptoken, *ds;
+
+    if (!filename)
+    {
+        eprintf("%s: invalid argument\n", __func__);
+        return -1;
+    }
+    ds = strdup(filename);
+    tokens[0] = strsep(&ds, "/");
+    tokens[1] = strsep(&ds, "\0");
+
+
+    if ((tokens[0] && !strlen(tokens[0])) || (tokens[1] && !strlen(tokens[1])))
+    {
+        eprintf("%s: server and volume name must be specified", __func__);
+        free(ds);
+        return -1;
+    }
+
+    *volume_name = strdup(tokens[1]);
+    if (!index(tokens[0], ':'))
+    {
+        *port = OVS_DFL_NETWORK_PORT;
+        *host = strdup(tokens[0]);
+    }
+    else
+    {
+        inetaddr = strdup(tokens[0]);
+        h = strtok(inetaddr, ":");
+        if (h)
+        {
+            *host = strdup(h);
+        }
+        ptoken = strtok(NULL, "\0");
+        if (ptoken != NULL)
+        {
+            int p = strtoul(ptoken, &endptr, 10);
+            if (strlen(endptr))
+            {
+                eprintf("%s: server/port must be specified\n", __func__);
+                free(inetaddr);
+                free(ds);
+                return -1;
+            }
+            *port = p;
+        }
+        else
+        {
+            eprintf("%s: server/port must be specified\n", __func__);
+            free(inetaddr);
+            free(ds);
+            return -1;
+        }
+        free(inetaddr);
+        free(ds);
+    }
+    return 0;
+}
+
+static int bs_openvstorage_open_helper(struct scsi_lu *lu,
+                                       const char *path,
+                                       int *fd,
+                                       uint64_t *size,
+                                       const char *transport,
+                                       bool is_network)
 {
     struct active_ovs *ai = OVSP(lu);
     uint32_t blksize = 0;
     struct stat st;
     int r;
+    char *host = NULL;
+    char *volume_name = NULL;
+    int port = 0;
 
-    ai->ioctx = ovs_ctx_init(path, O_RDWR);
-    if (ai->ioctx == NULL)
+    if (is_network)
     {
-        eprintf("%s: cannot create OpenvStorage context (errno: %d)\n",
-                __func__,
-                errno);
-        return -EIO;
+        r = bs_openvstorage_parse_path_opt(path,
+                                           &host,
+                                           &port,
+                                           &volume_name);
+        if (r < 0)
+        {
+            return -EINVAL;
+        }
     }
 
+    ovs_ctx_attr_t *ctx_attr = ovs_ctx_attr_new();
+    assert(ctx_attr != NULL);
+
+    if (ovs_ctx_attr_set_transport(ctx_attr,
+                                   transport,
+                                   host,
+                                   port) < 0) {
+        r = -errno;
+        eprintf("%s: cannot set transport type: %s\n",
+                __func__,
+                strerror(errno));
+        ovs_ctx_attr_destroy(ctx_attr);
+        return r;
+    }
+
+    ai->ioctx = ovs_ctx_new(ctx_attr);
+    ovs_ctx_attr_destroy(ctx_attr);
+    if (ai->ioctx == NULL)
+    {
+        eprintf("%s: cannot create context (errno: %d)\n", __func__, errno);
+        return -EIO;
+    }
+    r = ovs_ctx_init(ai->ioctx, is_network ? volume_name : path, O_RDWR);
+    if (r < 0)
+    {
+        r = -errno;
+        eprintf("%s: cannot open volume: %s\n", __func__, strerror(errno));
+        ovs_ctx_destroy(ai->ioctx);
+        return r;
+    }
     r = ovs_stat(ai->ioctx, &st);
     if (r < 0)
     {
-        eprintf("%s: cannot stat volume (errno: %d)\n",
-                __func__,
-                errno);
+        eprintf("%s: cannot stat volume (errno: %d)\n", __func__, errno);
         ovs_ctx_destroy(ai->ioctx);
         return r;
     }
@@ -221,6 +322,46 @@ static int bs_openvstorage_open(struct scsi_lu *lu,
         update_lbppbe(lu, blksize);
     }
     return 0;
+
+}
+
+static int bs_openvstorage_open_shm(struct scsi_lu *lu,
+                                    char *path,
+                                    int *fd,
+                                    uint64_t *size)
+{
+    return bs_openvstorage_open_helper(lu,
+                                       path,
+                                       fd,
+                                       size,
+                                       "shm",
+                                       false);
+}
+
+static int bs_openvstorage_open_tcp(struct scsi_lu *lu,
+                                    char *path,
+                                    int *fd,
+                                    uint64_t *size)
+{
+    return bs_openvstorage_open_helper(lu,
+                                       path,
+                                       fd,
+                                       size,
+                                       "tcp",
+                                       true);
+}
+
+static int bs_openvstorage_open_rdma(struct scsi_lu *lu,
+                                     char *path,
+                                     int *fd,
+                                     uint64_t *size)
+{
+    return bs_openvstorage_open_helper(lu,
+                                       path,
+                                       fd,
+                                       size,
+                                       "rdma",
+                                       true);
 }
 
 static void bs_openvstorage_close(struct scsi_lu *lu)
@@ -231,9 +372,7 @@ static void bs_openvstorage_close(struct scsi_lu *lu)
     r = ovs_ctx_destroy(ai->ioctx);
     if (r < 0)
     {
-        eprintf("%s: cannot destroy OpenvStorage context (errno: %d)\n",
-                __func__,
-                errno);
+        eprintf("%s: cannot destroy context (errno: %d)\n", __func__, errno);
     }
 }
 
@@ -249,10 +388,32 @@ static void bs_openvstorage_exit(struct scsi_lu *lu)
     bs_thread_close(info);
 }
 
-static struct backingstore_template openvstorage_bst = {
+static struct backingstore_template openvstorage_shm_bst = {
     .bs_name = "openvstorage",
     .bs_datasize = sizeof(struct bs_thread_info) + sizeof(struct active_ovs),
-    .bs_open = bs_openvstorage_open,
+    .bs_open = bs_openvstorage_open_shm,
+    .bs_close = bs_openvstorage_close,
+    .bs_init = bs_openvstorage_init,
+    .bs_exit = bs_openvstorage_exit,
+    .bs_cmd_submit = bs_thread_cmd_submit,
+    .bs_oflags_supported = O_SYNC | O_DIRECT,
+};
+
+static struct backingstore_template openvstorage_tcp_bst = {
+    .bs_name = "openvstorage+tcp",
+    .bs_datasize = sizeof(struct bs_thread_info) + sizeof(struct active_ovs),
+    .bs_open = bs_openvstorage_open_tcp,
+    .bs_close = bs_openvstorage_close,
+    .bs_init = bs_openvstorage_init,
+    .bs_exit = bs_openvstorage_exit,
+    .bs_cmd_submit = bs_thread_cmd_submit,
+    .bs_oflags_supported = O_SYNC | O_DIRECT,
+};
+
+static struct backingstore_template openvstorage_rdma_bst = {
+    .bs_name = "openvstorage+rdma",
+    .bs_datasize = sizeof(struct bs_thread_info) + sizeof(struct active_ovs),
+    .bs_open = bs_openvstorage_open_rdma,
     .bs_close = bs_openvstorage_close,
     .bs_init = bs_openvstorage_init,
     .bs_exit = bs_openvstorage_exit,
@@ -294,6 +455,10 @@ void register_bs_module(void)
         WRITE_6
     };
 
-    bs_create_opcode_map(&openvstorage_bst, opcodes, ARRAY_SIZE(opcodes));
-    register_backingstore_template(&openvstorage_bst);
+    bs_create_opcode_map(&openvstorage_shm_bst, opcodes, ARRAY_SIZE(opcodes));
+    bs_create_opcode_map(&openvstorage_tcp_bst, opcodes, ARRAY_SIZE(opcodes));
+    bs_create_opcode_map(&openvstorage_rdma_bst, opcodes, ARRAY_SIZE(opcodes));
+    register_backingstore_template(&openvstorage_shm_bst);
+    register_backingstore_template(&openvstorage_tcp_bst);
+    register_backingstore_template(&openvstorage_rdma_bst);
 }
