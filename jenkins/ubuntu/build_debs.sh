@@ -8,13 +8,16 @@ then
   exit 1
 fi
 
-if [ ! -d "${SRCDIR}" ] 
+if [ ! -d "${SRCDIR}" ]
 then
   echo "Sourcedir ${SRCDIR} not found?! Aborting build..."
   exit 1
 fi
 
 set -e
+
+# the OVS apt repo hosts dependencies that are not yet available in Ubuntu
+echo "deb http://apt.openvstorage.org unstable main" | sudo tee /etc/apt/sources.list.d/ovsaptrepo.list
 
 echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections
 sudo apt-get update -qq
@@ -31,7 +34,7 @@ done
 cd ${SRCDIR}
 
 echo ">>> INSTALLING BUILD DEPENDENCIES <<<"
-sudo apt-get install -y $(dpkg-checkbuilddeps 2>&1 | sed -e 's/.*dependencies://' -e 's/ ([^)]*)/ /g') 
+sudo apt-get install -y $(dpkg-checkbuilddeps 2>&1 | sed -e 's/.*dependencies://' -e 's/ ([^)]*)/ /g')
 
 echo ">>> BUILDING DEBIAN PACKAGES <<<"
 dpkg-buildpackage -us -uc -b
