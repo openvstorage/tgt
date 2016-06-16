@@ -6,7 +6,7 @@ BUILDING FOR UBUNTU 14.04
     mkdir WORK
     cd WORK
 
-    ## manually fetch latest volumedriver-dev package here
+    ## manually fetch latest libovsvolumedriver + libovsvolumedriver-dev packages here
 
     git clone https://github.com/openvstorage/tgt
 

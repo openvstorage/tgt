@@ -16,12 +16,12 @@ sudo yum install -y wget gcc make yum-utils rpm-build rpmdevtools redhat-rpm-con
 
 ## if jenkins copied in volumedriver packages install them,
 ## else use the packages from the openvstorage repo
-P=$(ls -d volumedriver-*.rpm 2>/dev/null || true)
+P=$(ls -d libovsvolumedriver*.rpm 2>/dev/null || true)
 if [ -n "$P" ]
 then
-  sudo yum install -y volumedriver-*.rpm
+  sudo yum install -y libovsvolumedriver*.rpm
 else
-  sudo yum install -y volumedriver-dev
+  sudo yum install -y libovsvolumedriver-devel
 fi
 
 ## prepare the build env
@@ -36,7 +36,7 @@ echo '>>> GET OPENVSTORAGE PATCH FROM GITHUB <<<'
 rm -f SOURCES/openvstorage_tgt.patch
 wget -q -nc -O SOURCES/openvstorage_tgt.patch https://github.com/openvstorage/tgt/compare/upstream...master.patch
 
-echo '>>> FETCHING UPSTREAM SOURCES <<<' 
+echo '>>> FETCHING UPSTREAM SOURCES <<<'
 spectool -g -C SOURCES SPECS/${SPEC_FILE}
 
 echo '>>> INSTALL BUILD DEPENDENCIES <<<'
@@ -44,4 +44,3 @@ sudo yum-builddep -y SPECS/${SPEC_FILE}
 
 echo '>>> BUILD RPMS <<<'
 rpmbuild -ba --define "_topdir ${PWD}" SPECS/${SPEC_FILE}
-

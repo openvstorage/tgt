@@ -24,9 +24,8 @@ echo "deb http://apt.openvstorage.org unstable main" | sudo tee /etc/apt/sources
 echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections
 sudo apt-get update -qq
 
-## we know we depend on the volumedriver-dev package, and we want latest greatest, so install from artifact
-
-for p in volumedriver-base_*_amd64.deb volumedriver-server_*_amd64.deb volumedriver-dev_*_amd64.deb
+## we know we depend on the libovsvolumedriver-dev package, and we want latest greatest, so install from artifact
+for p in libovsvolumedriver_*_amd64.deb libovsvolumedriver-dev_*_amd64.deb
 do
   echo -n "Installing $p..."
   sudo dpkg -i $p || sudo apt-get install --allow-unauthenticated -qq -y -f
