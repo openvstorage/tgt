@@ -1,3 +1,9 @@
+tgt (1:1.0.43-0ubuntu4.1~14.04.2ubuntu2) trusty; urgency=medium
+
+  * Update to use libovsvolumedriver 6.0.0
+
+ -- Arne Redlich <arne.redlich@openvstorage.com>  Fri, 17 Jun 2016 11:26:41 +0200
+
 tgt (1:1.0.43-0ubuntu4.1~14.04.2ubuntu1) trusty; urgency=medium
 
   * OpenvStorage backing store support
