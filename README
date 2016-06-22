@@ -1,4 +1,7 @@
-Introduction
+**How to use and build TGT with Open vStorage can be found [here](https://openvstorage.gitbooks.io/tgt)**
+
+
+TGT Introduction
 -------------
 Linux target framework (tgt) aims to simplify various SCSI target
 driver (iSCSI, Fibre Channel, SRP, etc) creation and maintenance.
