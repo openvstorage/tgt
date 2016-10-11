@@ -1,3 +1,14 @@
+tgt (1:1.0.43-0ubuntu4.1~14.04.2ubuntu3) trusty; urgency=medium
+
+  * Enable HA by default
+
+    Introduce new option 'enable-ha'. High availability
+    is enabled by default (on).
+
+    Usage: ip:port/volume,enable-ha=[on|off]
+
+ -- Chrysostomos Nanakos <cnanakos@openvstorage.com>  Tue, 11 Oct 2016 13:34:10 +0200
+
 tgt (1:1.0.43-0ubuntu4.1~14.04.2ubuntu2) trusty; urgency=medium
 
   * Update to use libovsvolumedriver 6.0.0

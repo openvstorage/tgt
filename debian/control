@@ -15,7 +15,7 @@ Conflicts: tgt
 Replaces: tgt
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, libconfig-general-perl, sg3-utils,
-    volumedriver-server (>= 5.7.0)
+    volumedriver-server (>= 6.0.0)
 Description: Linux SCSI target user-space tools
  The Linux target framework (tgt) allows a Linux system to provide SCSI
  devices (targets) over networked SCSI transports.
