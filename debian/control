@@ -5,7 +5,7 @@ Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
 XSBC-Original-Maintainer: Debian Kernel Team <debian-kernel@lists.debian.org>
 Uploaders: Frederik Schüler <fs@debian.org>, Ben Hutchings <ben@decadent.org.uk>
 Build-Depends: debhelper (>= 8~), libibverbs-dev, librdmacm-dev, librbd-dev,
- xsltproc, docbook-xsl, bash-completion, libovsvolumedriver-dev (>= 6.0.0)
+ xsltproc, docbook-xsl, bash-completion, libovsvolumedriver-dev (>= 6.7.0)
 Standards-Version: 3.9.4
 Homepage: http://stgt.berlios.de/
 XS-Testsuite: autopkgtest
@@ -15,7 +15,7 @@ Conflicts: tgt
 Replaces: tgt
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, libconfig-general-perl, sg3-utils,
-    volumedriver-server (>= 6.0.0)
+    libovsvolumedriver (>= 6.7.0)
 Description: Linux SCSI target user-space tools
  The Linux target framework (tgt) allows a Linux system to provide SCSI
  devices (targets) over networked SCSI transports.
