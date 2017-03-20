@@ -1,3 +1,10 @@
+tgt (1:1.0.43-0ubuntu4.1~14.04.2ubuntu3) trusty; urgency=medium
+
+  * Remove libovsvolumedriver package versioning check,
+    use the virtual package name instead.
+
+ -- Chrysostomos Nanakos <cnanakos@openvstorage.com>  Mon, 20 Mar 2017 10:21:10 +0200
+
 tgt (1:1.0.43-0ubuntu4.1~14.04.2ubuntu2) trusty; urgency=medium
 
   * Update to use libovsvolumedriver 6.0.0
