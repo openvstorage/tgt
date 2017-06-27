@@ -40,7 +40,10 @@
 #include "spc.h"
 #include "bs_thread.h"
 
+#define MAX_REQUEST_SIZE	32768
+
 #define OVS_DFL_NETWORK_PORT    21321
+#define OVS_OPT_ENABLE_HA       "enable-ha"
 
 struct active_ovs
 {
@@ -60,11 +63,87 @@ typedef enum
                  sizeof(struct bs_thread_info)) \
         )
 
+static int strstart(const char *str, const char *val, const char **ptr)
+{
+    const char *p, *q;
+    p = str;
+    q = val;
+    while (*q != '\0') {
+            if (*p != *q)
+            {
+                        return 0;
+                    }
+            p++;
+            q++;
+        }
+    if (ptr)
+    {
+            *ptr = p;
+        }
+    return 1;
+}
+
 static void set_medium_error(int *result, uint8_t *key, uint16_t *asc)
 {
     *result = SAM_STAT_CHECK_CONDITION;
     *key = MEDIUM_ERROR;
     *asc = ASC_READ_ERROR;
+}
+
+static int
+ovs_chunked_write(struct active_ovs *ai, char *buf, int len, uint64_t offset)
+{
+    ssize_t remaining_len = len;
+    ssize_t wsize = 0;
+    ssize_t total = 0;
+    while (remaining_len > 0)
+    {
+        ssize_t _wsize = MAX_REQUEST_SIZE;
+        if (remaining_len < _wsize)
+        {
+            _wsize = remaining_len;
+        }
+        wsize = ovs_write(ai->ioctx, buf, _wsize, offset);
+        if (wsize < 0)
+        {
+            return -1;
+        }
+        remaining_len -= wsize;
+        offset += wsize;
+        buf += wsize;
+        total += wsize;
+    }
+    return total;
+}
+
+static int
+ovs_chunked_read(struct active_ovs *ai, char *buf, int len, uint64_t offset)
+{
+    ssize_t remaining_len = len;
+    ssize_t rsize = 0;
+    ssize_t total = 0;
+    while (remaining_len > 0)
+    {
+        ssize_t _rsize = MAX_REQUEST_SIZE;
+        if (remaining_len < _rsize)
+        {
+            _rsize = remaining_len;
+        }
+        rsize = ovs_read(ai->ioctx, buf, _rsize, offset);
+        if (rsize < 0)
+        {
+            return -1;
+        }
+        else if (rsize == 0)
+        {
+            return total;
+        }
+        remaining_len -= rsize;
+        offset += rsize;
+        buf += rsize;
+        total += rsize;
+    }
+    return total;
 }
 
 static int bs_ovs_io(struct active_ovs *ai, OVSTGTCmd cmd, char *buf, int len,
@@ -86,17 +165,17 @@ static int bs_ovs_io(struct active_ovs *ai, OVSTGTCmd cmd, char *buf, int len,
     {
     case OVS_TGT_OP_WRITE:
         memcpy(ovs_buffer_data(ovs_buf), buf, len);
-        r = ovs_write(ai->ioctx, ovs_buffer_data(ovs_buf), len, offset);
+        r = ovs_chunked_write(ai, ovs_buffer_data(ovs_buf), len, offset);
         if (r < 0)
         {
             eprintf("%s: write failed (errno: %d)\n", __func__, errno);
         }
         break;
     case OVS_TGT_OP_READ:
-        r = ovs_read(ai->ioctx, ovs_buffer_data(ovs_buf), len, offset);
+        r = ovs_chunked_read(ai, ovs_buffer_data(ovs_buf), len, offset);
         if (r < 0)
         {
-            eprintf("%s: write failed (errno: %d)\n", __func__, errno);
+            eprintf("%s: read failed (errno: %d)\n", __func__, errno);
         }
         else
         {
@@ -186,10 +265,12 @@ static void bs_openvstorage_request(struct scsi_cmd *cmd)
 static int bs_openvstorage_parse_path_opt(const char *filename,
                                           char **host,
                                           int *port,
-                                          char **volume_name)
+                                          char **volume_name,
+                                          int *enable_ha)
 {
+    const char *a;
     char *endptr, *inetaddr, *h;
-    char *tokens[2], *ptoken, *ds;
+    char *tokens[3], *ptoken, *ds;
 
     if (!filename)
     {
@@ -198,10 +279,12 @@ static int bs_openvstorage_parse_path_opt(const char *filename,
     }
     ds = strdup(filename);
     tokens[0] = strsep(&ds, "/");
-    tokens[1] = strsep(&ds, "\0");
+    tokens[1] = strsep(&ds, ",");
+    tokens[2] = strsep(&ds, "\0");
 
 
-    if ((tokens[0] && !strlen(tokens[0])) || (tokens[1] && !strlen(tokens[1])))
+    if ((tokens[0] && !strlen(tokens[0])) ||
+        (tokens[1] && !strlen(tokens[1])))
     {
         eprintf("%s: server and volume name must be specified", __func__);
         free(ds);
@@ -245,6 +328,19 @@ static int bs_openvstorage_parse_path_opt(const char *filename,
         free(inetaddr);
         free(ds);
     }
+    if (tokens[2] != NULL && strstart(tokens[2], OVS_OPT_ENABLE_HA"=", &a))
+    {
+        if (strlen(a) > 0)
+        {
+            if (!strcmp(a, "on")) {
+                *enable_ha = 1;
+            } else if (!strcmp(a, "off")) {
+                *enable_ha = 0;
+            }
+        } else {
+            *enable_ha = 1;
+        }
+    }
     return 0;
 }
 
@@ -262,13 +358,15 @@ static int bs_openvstorage_open_helper(struct scsi_lu *lu,
     char *host = NULL;
     char *volume_name = NULL;
     int port = 0;
+    int enable_ha = 1;
 
     if (is_network)
     {
         r = bs_openvstorage_parse_path_opt(path,
                                            &host,
                                            &port,
-                                           &volume_name);
+                                           &volume_name,
+                                           &enable_ha);
         if (r < 0)
         {
             return -EINVAL;
@@ -288,6 +386,18 @@ static int bs_openvstorage_open_helper(struct scsi_lu *lu,
                 strerror(errno));
         ovs_ctx_attr_destroy(ctx_attr);
         return r;
+    }
+
+    if (enable_ha)
+    {
+        if (ovs_ctx_attr_enable_ha(ctx_attr) < 0) {
+            r = -errno;
+            eprintf("%s: cannot enable high availability: %s\n",
+                    __func__,
+                    strerror(errno));
+            ovs_ctx_attr_destroy(ctx_attr);
+            return r;
+        }
     }
 
     ai->ioctx = ovs_ctx_new(ctx_attr);
@@ -388,8 +498,19 @@ static void bs_openvstorage_exit(struct scsi_lu *lu)
     bs_thread_close(info);
 }
 
-static struct backingstore_template openvstorage_shm_bst = {
+static struct backingstore_template openvstorage_bst = {
     .bs_name = "openvstorage",
+    .bs_datasize = sizeof(struct bs_thread_info) + sizeof(struct active_ovs),
+    .bs_open = bs_openvstorage_open_shm,
+    .bs_close = bs_openvstorage_close,
+    .bs_init = bs_openvstorage_init,
+    .bs_exit = bs_openvstorage_exit,
+    .bs_cmd_submit = bs_thread_cmd_submit,
+    .bs_oflags_supported = O_SYNC | O_DIRECT,
+};
+
+static struct backingstore_template openvstorage_shm_bst = {
+    .bs_name = "openvstorage+shm",
     .bs_datasize = sizeof(struct bs_thread_info) + sizeof(struct active_ovs),
     .bs_open = bs_openvstorage_open_shm,
     .bs_close = bs_openvstorage_close,
@@ -455,9 +576,11 @@ void register_bs_module(void)
         WRITE_6
     };
 
+    bs_create_opcode_map(&openvstorage_bst, opcodes, ARRAY_SIZE(opcodes));
     bs_create_opcode_map(&openvstorage_shm_bst, opcodes, ARRAY_SIZE(opcodes));
     bs_create_opcode_map(&openvstorage_tcp_bst, opcodes, ARRAY_SIZE(opcodes));
     bs_create_opcode_map(&openvstorage_rdma_bst, opcodes, ARRAY_SIZE(opcodes));
+    register_backingstore_template(&openvstorage_bst);
     register_backingstore_template(&openvstorage_shm_bst);
     register_backingstore_template(&openvstorage_tcp_bst);
     register_backingstore_template(&openvstorage_rdma_bst);

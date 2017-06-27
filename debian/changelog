@@ -1,3 +1,16 @@
+tgt (1:1.0.43-0ubuntu4.1~14.04.2ubuntu5) trusty; urgency=medium
+
+  * Return total read/write size to caller.
+
+ -- Chrysostomos Nanakos <cnanakos@openvstorage.com>  Wed, 28 Jun 2017 19:13:10 +0200
+
+tgt (1:1.0.43-0ubuntu4.1~14.04.2ubuntu4) trusty; urgency=medium
+
+  * OpenvStorage: Split read/write request, maximum request size
+    is set to 32KiB.
+
+ -- Chrysostomos Nanakos <cnanakos@openvstorage.com>  Tue, 27 Jun 2017 15:13:10 +0200
+
 tgt (1:1.0.43-0ubuntu4.1~14.04.2ubuntu3) trusty; urgency=medium
 
   * Remove libovsvolumedriver package versioning check,
