@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# Restart tgtd to make sure modules are loaded
+invoke-rc.d tgt restart || echo "Failed to restart tgt" >&2
+
+# Test tgtd module usability
+supported_bs=$(tgtadm --mode sys --op show | \
+		awk '
+			BEGIN { p = 0 };
+			/^[a-zA-Z]/ { p = 0 };
+			/^Backing stores/ { p = 1; getline; };
+			{ if (p) { gsub("^ +", ""); print };
+		}')
+ret=0
+
+for bs in rbd; do
+	if echo "$supported_bs" | grep -q "\b$bs\b"; then
+		echo "OK - $bs supported"
+	else
+		echo "ERROR - $bs not supported" >&2
+		ret=1
+	fi
+done
+
+exit $ret

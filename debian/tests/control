@@ -1,3 +1,6 @@
 Tests: daemon admin
-Depends: @
-Restrictions: needs-root
+Depends: tgt
+
+Tests: storage
+Depends: tgt, tgt-rbd
+Restrictions: needs-root isolation-container allow-stderr

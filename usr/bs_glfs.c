@@ -1,6 +1,8 @@
 /*
- * Synchronous I/O file backing store routine
+ * Synchronous glfs backing store routines
  *
+ * Modified from bs_rdb.c
+ * Copyright (C) 2013 Dan Lambright <dlambrig@redhat.com>
  * Copyright (C) 2006-2007 FUJITA Tomonori <tomof@acm.org>
  * Copyright (C) 2006-2007 Mike Christie <michaelc@cs.wisc.edu>
  *
@@ -41,6 +43,26 @@
 #include "spc.h"
 #include "bs_thread.h"
 
+#include "glfs.h"
+
+struct active_glfs {
+	char *name;
+	glfs_t *fs;
+	glfs_fd_t *gfd;
+	char *logfile;
+	int loglevel;
+};
+
+#define ALLOWED_BSOFLAGS (O_SYNC | O_DIRECT | O_RDWR | O_LARGEFILE)
+
+#define GLUSTER_PORT 24007
+
+#define GFSP(lu)	((struct active_glfs *) \
+				((char *)lu + \
+				sizeof(struct scsi_lu) + \
+				sizeof(struct bs_thread_info)) \
+			)
+
 static void set_medium_error(int *result, uint8_t *key, uint16_t *asc)
 {
 	*result = SAM_STAT_CHECK_CONDITION;
@@ -48,24 +70,23 @@ static void set_medium_error(int *result, uint8_t *key, uint16_t *asc)
 	*asc = ASC_READ_ERROR;
 }
 
-static void bs_sync_sync_range(struct scsi_cmd *cmd, uint32_t length,
-			       int *result, uint8_t *key, uint16_t *asc)
+static int bs_glfs_discard(glfs_fd_t *gfd, off_t offset, size_t len)
 {
-	int ret;
-
-	ret = fdatasync(cmd->dev->fd);
-	if (ret)
-		set_medium_error(result, key, asc);
+#ifdef BS_GLFS_DISCARD
+	return glfs_discard(gfd, offset, len);
+#endif
+	return 0;
 }
 
-static void bs_rdwr_request(struct scsi_cmd *cmd)
+static void bs_glfs_request(struct scsi_cmd *cmd)
 {
-	int ret, fd = cmd->dev->fd;
+	glfs_fd_t *gfd = GFSP(cmd->dev)->gfd;
+	struct scsi_lu *lu = cmd->dev;
+	int ret;
 	uint32_t length;
 	int result = SAM_STAT_GOOD;
 	uint8_t key;
 	uint16_t asc;
-	uint32_t info = 0;
 	char *tmpbuf;
 	size_t blocksize;
 	uint64_t offset = cmd->offset;
@@ -77,8 +98,7 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 	ret = length = 0;
 	key = asc = 0;
 
-	switch (cmd->scb[0])
-	{
+	switch (cmd->scb[0]) {
 	case ORWRITE_16:
 		length = scsi_get_out_length(cmd);
 
@@ -90,7 +110,7 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 			break;
 		}
 
-		ret = pread64(fd, tmpbuf, length, offset);
+		ret = glfs_pread(gfd, tmpbuf, length, offset, lu->bsoflags);
 
 		if (ret != length) {
 			set_medium_error(&result, &key, &asc);
@@ -127,7 +147,7 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 			break;
 		}
 
-		ret = pread64(fd, tmpbuf, length, offset);
+		ret = glfs_pread(gfd, tmpbuf, length, offset, SEEK_SET);
 
 		if (ret != length) {
 			set_medium_error(&result, &key, &asc);
@@ -149,17 +169,12 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 			for (pos = 0; pos < length && *spos++ == *dpos++;
 			     pos++)
 				;
-			info = pos;
 			result = SAM_STAT_CHECK_CONDITION;
 			key = MISCOMPARE;
 			asc = ASC_MISCOMPARE_DURING_VERIFY_OPERATION;
 			free(tmpbuf);
 			break;
 		}
-
-		if (cmd->scb[1] & 0x10)
-			posix_fadvise(fd, offset, length,
-				      POSIX_FADV_NOREUSE);
 
 		free(tmpbuf);
 
@@ -174,8 +189,9 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 			result = SAM_STAT_CHECK_CONDITION;
 			key = ILLEGAL_REQUEST;
 			asc = ASC_INVALID_FIELD_IN_CDB;
-		} else
-			bs_sync_sync_range(cmd, length, &result, &key, &asc);
+		} else {
+			glfs_fdatasync(gfd);
+		}
 		break;
 	case WRITE_VERIFY:
 	case WRITE_VERIFY_12:
@@ -188,8 +204,8 @@ static void bs_rdwr_request(struct scsi_cmd *cmd)
 		length = scsi_get_out_length(cmd);
 		write_buf = scsi_get_out_buffer(cmd);
 write:
-		ret = pwrite64(fd, write_buf, length,
-			       offset);
+		ret = glfs_pwrite(gfd, write_buf, length, offset, lu->bsoflags);
+
 		if (ret == length) {
 			struct mode_pg *pg;
 
@@ -206,14 +222,10 @@ write:
 			}
 			if (((cmd->scb[0] != WRITE_6) && (cmd->scb[1] & 0x8)) ||
 			    !(pg->mode_data[0] & 0x04))
-				bs_sync_sync_range(cmd, length, &result, &key,
-						   &asc);
+				glfs_fdatasync(gfd);
 		} else
 			set_medium_error(&result, &key, &asc);
 
-		if ((cmd->scb[0] != WRITE_6) && (cmd->scb[1] & 0x10))
-			posix_fadvise(fd, offset, length,
-				      POSIX_FADV_NOREUSE);
 		if (do_verify)
 			goto verify;
 		break;
@@ -221,10 +233,9 @@ write:
 	case WRITE_SAME_16:
 		/* WRITE_SAME used to punch hole in file */
 		if (cmd->scb[1] & 0x08) {
-			ret = unmap_file_region(fd, offset, tl);
+			ret = bs_glfs_discard(gfd, offset, tl);
 			if (ret != 0) {
-				eprintf("Failed to punch hole for WRITE_SAME"
-					" command\n");
+				eprintf("Failed WRITE_SAME command\n");
 				result = SAM_STAT_CHECK_CONDITION;
 				key = HARDWARE_ERROR;
 				asc = ASC_INTERNAL_TGT_FAILURE;
@@ -236,7 +247,7 @@ write:
 			blocksize = 1 << cmd->dev->blk_shift;
 			tmpbuf = scsi_get_out_buffer(cmd);
 
-			switch(cmd->scb[1] & 0x06) {
+			switch (cmd->scb[1] & 0x06) {
 			case 0x02: /* PBDATA==0 LBDATA==1 */
 				put_unaligned_be32(offset, tmpbuf);
 				break;
@@ -246,7 +257,9 @@ write:
 				break;
 			}
 
-			ret = pwrite64(fd, tmpbuf, blocksize, offset);
+			ret = glfs_pwrite(gfd, tmpbuf, blocksize,
+					offset, lu->bsoflags);
+
 			if (ret != blocksize)
 				set_medium_error(&result, &key, &asc);
 
@@ -259,22 +272,16 @@ write:
 	case READ_12:
 	case READ_16:
 		length = scsi_get_in_length(cmd);
-		ret = pread64(fd, scsi_get_in_buffer(cmd), length,
-			      offset);
+		ret = glfs_pread(gfd, scsi_get_in_buffer(cmd),
+				length, offset, SEEK_SET);
 
-		if (ret != length)
+		if (ret != length) {
+			eprintf("Error on read %x %x", ret, length);
 			set_medium_error(&result, &key, &asc);
-
-		if ((cmd->scb[0] != READ_6) && (cmd->scb[1] & 0x10))
-			posix_fadvise(fd, offset, length,
-				      POSIX_FADV_NOREUSE);
-
+		}
 		break;
 	case PRE_FETCH_10:
 	case PRE_FETCH_16:
-		ret = posix_fadvise(fd, offset, cmd->tl,
-				POSIX_FADV_WILLNEED);
-
 		if (ret != 0)
 			set_medium_error(&result, &key, &asc);
 		break;
@@ -292,7 +299,7 @@ verify:
 			break;
 		}
 
-		ret = pread64(fd, tmpbuf, length, offset);
+		ret = glfs_pread(gfd, tmpbuf, length, offset, lu->bsoflags);
 
 		if (ret != length)
 			set_medium_error(&result, &key, &asc);
@@ -301,10 +308,6 @@ verify:
 			key = MISCOMPARE;
 			asc = ASC_MISCOMPARE_DURING_VERIFY_OPERATION;
 		}
-
-		if (cmd->scb[1] & 0x10)
-			posix_fadvise(fd, offset, length,
-				      POSIX_FADV_NOREUSE);
 
 		free(tmpbuf);
 		break;
@@ -341,11 +344,8 @@ verify:
 			}
 
 			if (tl > 0) {
-				if (unmap_file_region(fd, offset, tl) != 0) {
-					eprintf("Failed to punch hole for"
-						" UNMAP at offset:%" PRIu64
-						" length:%d\n",
-						offset, tl);
+				if (bs_glfs_discard(gfd, offset, tl) != 0) {
+					eprintf("Failed UNMAP\n");
 					result = SAM_STAT_CHECK_CONDITION;
 					key = HARDWARE_ERROR;
 					asc = ASC_INTERNAL_TGT_FAILURE;
@@ -366,190 +366,193 @@ verify:
 	scsi_set_result(cmd, result);
 
 	if (result != SAM_STAT_GOOD) {
-		eprintf("io error %p %x %d %d %" PRIu64 ", %m\n",
-			cmd, cmd->scb[0], ret, length, offset);
+		eprintf("io error %p %x %x %d %d %" PRIu64 ", %m\n",
+			cmd, result, cmd->scb[0], ret, length, offset);
 		sense_data_build(cmd, key, asc);
 	}
 }
 
-static int bs_rdwr_open(struct scsi_lu *lu, char *path, int *fd, uint64_t *size)
+static void parse_imagepath(char *image, char **server, char **vol, char **path)
 {
-	uint32_t blksize = 0;
+	char *origp = strdup(image);
+	char *p, *sep;
 
-	*fd = backed_file_open(path, O_RDWR|O_LARGEFILE|lu->bsoflags, size,
-				&blksize);
-	/* If we get access denied, try opening the file in readonly mode */
-	if (*fd == -1 && (errno == EACCES || errno == EROFS)) {
-		*fd = backed_file_open(path, O_RDONLY|O_LARGEFILE|lu->bsoflags,
-				       size, &blksize);
-		lu->attrs.readonly = 1;
+	p = origp;
+	sep = strchr(p, '@');
+	if (sep == NULL) {
+		*server = "";
+	} else {
+		*sep = '\0';
+		*server = strdup(p);
+		p = sep + 1;
 	}
-	if (*fd < 0)
-		return *fd;
+	sep = strchr(p, ':');
+	if (sep == NULL) {
+		*vol = "";
+	} else {
+		*vol = strdup(sep + 1);
+		*sep = '\0';
+	}
 
-	if (!lu->attrs.no_auto_lbppbe)
-		update_lbppbe(lu, blksize);
-
-	return 0;
+	/* p points to path\0 */
+	*path = strdup(p);
+	free(origp);
 }
 
-static void bs_rdwr_close(struct scsi_lu *lu)
+static int bs_glfs_open(struct scsi_lu *lu, char *image, int *fd,
+			uint64_t *size)
 {
-	close(lu->fd);
+	int ret = 0;
+	char *servername;
+	char *volname;
+	char *pathname;
+	int bsoflags = ALLOWED_BSOFLAGS;
+	glfs_t *fs = 0;
+
+	parse_imagepath(image, &volname, &pathname, &servername);
+
+	if (volname && servername && pathname) {
+		glfs_fd_t *gfd = NULL;
+		struct stat st;
+
+		fs = glfs_new(volname);
+		if (!fs)
+			goto fail;
+
+		ret = glfs_set_volfile_server(fs, "tcp", servername,
+						GLUSTER_PORT);
+
+		ret = glfs_init(fs);
+		if (ret)
+			goto fail;
+
+		GFSP(lu)->fs = fs;
+
+		if (lu->bsoflags)
+			bsoflags = lu->bsoflags;
+
+		gfd = glfs_open(fs, pathname, bsoflags);
+		if (gfd == NULL)
+			goto fail;
+
+		ret = glfs_lstat(fs, pathname, &st);
+		if (ret)
+			goto fail;
+
+		GFSP(lu)->gfd = gfd;
+
+		*size = (long) st.st_size;
+
+		if (GFSP(lu)->logfile)
+			glfs_set_logging(fs, GFSP(lu)->logfile,
+					GFSP(lu)->loglevel);
+
+		return 0;
+	}
+fail:
+	if (fs)
+		glfs_fini(fs);
+
+	return -EIO;
 }
 
-static tgtadm_err bs_rdwr_init(struct scsi_lu *lu, char *bsopts)
+static void bs_glfs_close(struct scsi_lu *lu)
+{
+	if (GFSP(lu)->gfd)
+		glfs_close(GFSP(lu)->gfd);
+
+	if (GFSP(lu)->gfd)
+		glfs_fini(GFSP(lu)->fs);
+}
+
+static char *slurp_to_semi(char **p)
+{
+	char *end = index(*p, ';');
+	char *ret;
+	int len;
+
+	if (end == NULL)
+		end = *p + strlen(*p);
+	len = end - *p;
+	ret = malloc(len + 1);
+	strncpy(ret, *p, len);
+	ret[len] = '\0';
+	*p = end;
+	/* Jump past the semicolon, if we stopped at one */
+	if (**p == ';')
+		*p = end + 1;
+	return ret;
+}
+
+static char *slurp_value(char **p)
+{
+	char *equal = index(*p, '=');
+	if (equal) {
+		*p = equal + 1;
+		return slurp_to_semi(p);
+	} else {
+		return NULL;
+	}
+}
+
+static int is_opt(const char *opt, char *p)
+{
+	int ret = 0;
+	if ((strncmp(p, opt, strlen(opt)) == 0) &&
+		(p[strlen(opt)] == '=')) {
+		ret = 1;
+	}
+	return ret;
+}
+
+static tgtadm_err bs_glfs_init(struct scsi_lu *lu, char *bsopts)
+{
+	struct bs_thread_info *info = BS_THREAD_I(lu);
+	char *logfile = NULL;
+	int loglevel = 0;
+	char *sloglevel;
+
+	while (bsopts && strlen(bsopts)) {
+		if (is_opt("logfile", bsopts))
+			logfile = slurp_value(&bsopts);
+		else if (is_opt("loglevel", bsopts)) {
+			sloglevel = slurp_value(&bsopts);
+			loglevel = atoi(sloglevel);
+		}
+	}
+
+	GFSP(lu)->logfile = logfile;
+	GFSP(lu)->loglevel = loglevel;
+
+	return bs_thread_open(info, bs_glfs_request, nr_iothreads);
+}
+
+static void bs_glfs_exit(struct scsi_lu *lu)
 {
 	struct bs_thread_info *info = BS_THREAD_I(lu);
 
-	return bs_thread_open(info, bs_rdwr_request, nr_iothreads);
-}
+	if (GFSP(lu)->gfd)
+		glfs_close(GFSP(lu)->gfd);
 
-static void bs_rdwr_exit(struct scsi_lu *lu)
-{
-	struct bs_thread_info *info = BS_THREAD_I(lu);
+	if (GFSP(lu)->fs)
+		glfs_fini(GFSP(lu)->fs);
 
 	bs_thread_close(info);
 }
 
-static struct backingstore_template rdwr_bst = {
-	.bs_name		= "rdwr",
-	.bs_datasize		= sizeof(struct bs_thread_info),
-	.bs_open		= bs_rdwr_open,
-	.bs_close		= bs_rdwr_close,
-	.bs_init		= bs_rdwr_init,
-	.bs_exit		= bs_rdwr_exit,
+static struct backingstore_template glfs_bst = {
+	.bs_name		= "glfs",
+	.bs_datasize		= sizeof(struct active_glfs) +
+					sizeof(struct bs_thread_info),
+	.bs_open		= bs_glfs_open,
+	.bs_close		= bs_glfs_close,
+	.bs_init		= bs_glfs_init,
+	.bs_exit		= bs_glfs_exit,
 	.bs_cmd_submit		= bs_thread_cmd_submit,
-	.bs_oflags_supported    = O_SYNC | O_DIRECT,
+	.bs_oflags_supported    = ALLOWED_BSOFLAGS
 };
 
-static struct backingstore_template mmc_bst = {
-	.bs_name		= "mmc",
-	.bs_datasize		= sizeof(struct bs_thread_info),
-	.bs_open		= bs_rdwr_open,
-	.bs_close		= bs_rdwr_close,
-	.bs_init		= bs_rdwr_init,
-	.bs_exit		= bs_rdwr_exit,
-	.bs_cmd_submit		= bs_thread_cmd_submit,
-	.bs_oflags_supported    = O_SYNC | O_DIRECT,
-};
-
-static struct backingstore_template smc_bst = {
-	.bs_name		= "smc",
-	.bs_datasize		= sizeof(struct bs_thread_info),
-	.bs_open		= bs_rdwr_open,
-	.bs_close		= bs_rdwr_close,
-	.bs_init		= bs_rdwr_init,
-	.bs_exit		= bs_rdwr_exit,
-	.bs_cmd_submit		= bs_thread_cmd_submit,
-	.bs_oflags_supported    = O_SYNC | O_DIRECT,
-};
-
-__attribute__((constructor)) static void bs_rdwr_constructor(void)
+void register_bs_module(void)
 {
-	unsigned char sbc_opcodes[] = {
-		ALLOW_MEDIUM_REMOVAL,
-		COMPARE_AND_WRITE,
-		FORMAT_UNIT,
-		INQUIRY,
-		MAINT_PROTOCOL_IN,
-		MODE_SELECT,
-		MODE_SELECT_10,
-		MODE_SENSE,
-		MODE_SENSE_10,
-		ORWRITE_16,
-		PERSISTENT_RESERVE_IN,
-		PERSISTENT_RESERVE_OUT,
-		PRE_FETCH_10,
-		PRE_FETCH_16,
-		READ_10,
-		READ_12,
-		READ_16,
-		READ_6,
-		READ_CAPACITY,
-		RELEASE,
-		REPORT_LUNS,
-		REQUEST_SENSE,
-		RESERVE,
-		SEND_DIAGNOSTIC,
-		SERVICE_ACTION_IN,
-		START_STOP,
-		SYNCHRONIZE_CACHE,
-		SYNCHRONIZE_CACHE_16,
-		TEST_UNIT_READY,
-		UNMAP,
-		VERIFY_10,
-		VERIFY_12,
-		VERIFY_16,
-		WRITE_10,
-		WRITE_12,
-		WRITE_16,
-		WRITE_6,
-		WRITE_SAME,
-		WRITE_SAME_16,
-		WRITE_VERIFY,
-		WRITE_VERIFY_12,
-		WRITE_VERIFY_16
-	};
-	bs_create_opcode_map(&rdwr_bst, sbc_opcodes, ARRAY_SIZE(sbc_opcodes));
-	register_backingstore_template(&rdwr_bst);
-
-	unsigned char mmc_opcodes[] = {
-		ALLOW_MEDIUM_REMOVAL,
-		CLOSE_TRACK,
-		GET_CONFIGURATION,
-		GET_PERFORMACE,
-		INQUIRY,
-		MODE_SELECT,
-		MODE_SELECT_10,
-		MODE_SENSE,
-		MODE_SENSE_10,
-		PERSISTENT_RESERVE_IN,
-		PERSISTENT_RESERVE_OUT,
-		READ_10,
-		READ_12,
-		READ_BUFFER_CAP,
-		READ_CAPACITY,
-		READ_DISK_INFO,
-		READ_DVD_STRUCTURE,
-		READ_TOC,
-		READ_TRACK_INFO,
-		RELEASE,
-		REPORT_LUNS,
-		REQUEST_SENSE,
-		RESERVE,
-		SET_CD_SPEED,
-		SET_STREAMING,
-		START_STOP,
-		SYNCHRONIZE_CACHE,
-		TEST_UNIT_READY,
-		VERIFY_10,
-		WRITE_10,
-		WRITE_12,
-		WRITE_VERIFY,
-	};
-	bs_create_opcode_map(&mmc_bst, mmc_opcodes, ARRAY_SIZE(mmc_opcodes));
-	register_backingstore_template(&mmc_bst);
-
-	unsigned char smc_opcodes[] = {
-		INITIALIZE_ELEMENT_STATUS,
-		INITIALIZE_ELEMENT_STATUS_WITH_RANGE,
-		INQUIRY,
-		MAINT_PROTOCOL_IN,
-		MODE_SELECT,
-		MODE_SELECT_10,
-		MODE_SENSE,
-		MODE_SENSE_10,
-		MOVE_MEDIUM,
-		PERSISTENT_RESERVE_IN,
-		PERSISTENT_RESERVE_OUT,
-		REQUEST_SENSE,
-		TEST_UNIT_READY,
-		READ_ELEMENT_STATUS,
-		RELEASE,
-		REPORT_LUNS,
-		RESERVE,
-	};
-	bs_create_opcode_map(&smc_bst, smc_opcodes, ARRAY_SIZE(smc_opcodes));
-	register_backingstore_template(&smc_bst);
+	register_backingstore_template(&glfs_bst);
 }

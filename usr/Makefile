@@ -17,11 +17,19 @@ ifneq ($(CEPH_RBD),)
 MODULES += bs_rbd.so
 endif
 
-ifneq ($(shell test -e /usr/include/openvstorage/volumedriver.h && echo 1),)
+ifneq ($(OPENVSTORAGE),)
 MODULES += bs_openvstorage.so
 endif
 
-ifneq ($(shell test -e /usr/include/sys/eventfd.h && test -e /usr/include/libaio.h && echo 1),)
+ifneq ($(GLFS_BD),)
+MODULES += bs_glfs.so
+endif
+
+ifneq ($(SD_NOTIFY),)
+CFLAGS += -DUSE_SYSTEMD
+endif
+
+ifneq ($(shell test -e /usr/include/$(DEB_HOST_MULTIARCH)/sys/eventfd.h && test -e /usr/include/libaio.h && echo 1),)
 CFLAGS += -DUSE_EVENTFD
 TGTD_OBJS += bs_aio.o
 LIBS += -laio
@@ -47,6 +55,10 @@ CFLAGS += -DBSDIR=\"$(DESTDIR)$(libdir)/backing-store\"
 
 LIBS += -lpthread -ldl
 
+ifneq ($(SD_NOTIFY),)
+LIBS += -lsystemd
+endif
+
 PROGRAMS += tgtd tgtadm tgtimg
 TGTD_OBJS += tgtd.o mgmt.o target.o scsi.o log.o driver.o util.o work.o \
 		concat_buf.o parser.o spc.o sbc.o mmc.o osd.o scc.o smc.o \
@@ -55,14 +67,15 @@ TGTD_OBJS += tgtd.o mgmt.o target.o scsi.o log.o driver.o util.o work.o \
 
 TGTD_DEP = $(TGTD_OBJS:.o=.d)
 
-LDFLAGS = -Wl,-E,-rpath=$(libdir)
+TGTD_LDFLAGS = $(LDFLAGS)
+TGTD_LDFLAGS += -Wl,-E,-rpath=$(libdir)
 
 .PHONY:all
 all: $(PROGRAMS) $(MODULES)
 
 tgtd: $(TGTD_OBJS)
 	echo $(CC) $^ -o $@ $(LIBS)
-	$(CC) $^ -o $@ $(LDFLAGS) $(LIBS)
+	$(CC) $^ -o $@ $(TGTD_LDFLAGS) $(LIBS)
 
 -include $(TGTD_DEP)
 
@@ -70,7 +83,7 @@ TGTADM_OBJS = tgtadm.o concat_buf.o
 TGTADM_DEP = $(TGTADM_OBJS:.o=.d)
 
 tgtadm: $(TGTADM_OBJS)
-	$(CC) $^ -o $@
+	$(CC) $^ -o $@ $(LDFLAGS)
 
 -include $(TGTADM_DEP)
 
@@ -78,22 +91,29 @@ TGTIMG_OBJS = tgtimg.o libssc.o libcrc32c.o
 TGTIMG_DEP = $(TGTIMG_OBJS:.o=.d)
 
 tgtimg: $(TGTIMG_OBJS)
-	$(CC) $^ -o $@
+	$(CC) $^ -o $@ $(LDFLAGS)
 
 -include $(TGTIMG_DEP)
 
 %.o: %.c
-	$(CC) -c $(CFLAGS) $*.c -o $*.o
+	$(CC) $(CPPFLAGS) -c $(CFLAGS) $*.c -o $*.o
 	@$(CC) -MM $(CFLAGS) -MF $*.d -MT $*.o $*.c
 
 %.so: %.c
-	$(CC) -shared $(CFLAGS) $*.c -o $*.so
+	$(CC) $(CPPFLAGS) -shared $(CFLAGS) $*.c -o $*.so
 
 bs_rbd.so: bs_rbd.c
-	$(CC) -shared $(CFLAGS) bs_rbd.c -o bs_rbd.so -lrados -lrbd
+	$(CC) $(CPPFLAGS) -shared $(CFLAGS) bs_rbd.c -o bs_rbd.so \
+		-lrados -lrbd $(LDFLAGS)
 
 bs_openvstorage.so: bs_openvstorage.c
-	$(CC) -shared $(CFLAGS) bs_openvstorage.c -o bs_openvstorage.so -lovsvolumedriver -L/usr/lib/openvstorage
+	$(CC) $(CPPFLAGS) -shared $(CFLAGS) bs_openvstorage.c -o bs_openvstorage.so \
+		-lovsvolumedriver -L/usr/lib/openvstorage $(LDFLAGS)
+
+bs_glfs.so: bs_glfs.c
+	$(CC) $(CPPFLAGS) -I/usr/include/glusterfs/api \
+		-shared $(CFLAGS) bs_glfs.c -o bs_glfs.so \
+		-lgfapi $(LDFLAGS)
 
 .PHONY: install
 install: $(PROGRAMS) $(MODULES)

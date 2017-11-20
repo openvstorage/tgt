@@ -547,6 +547,16 @@ tgtadm_err tgt_device_create(int tid, int dev_type, uint64_t lun, char *params,
 	if ((!strncmp(bst->bs_name, "bsg", 3) ||
 	     !strncmp(bst->bs_name, "sg", 2)) &&
 	    dev_type != TYPE_PT) {
+		eprintf("Must set device type to pt for bsg/sg bstype\n");
+		adm_err = TGTADM_INVALID_REQUEST;
+		goto out;
+	}
+
+	if (!(!strncmp(bst->bs_name, "bsg", 3) ||
+	     !strncmp(bst->bs_name, "sg", 2)) &&
+	    dev_type == TYPE_PT) {
+		eprintf("Must set bstype to bsg or sg for devicetype pt, not %s\n",
+			bst->bs_name);
 		adm_err = TGTADM_INVALID_REQUEST;
 		goto out;
 	}
@@ -1454,7 +1464,7 @@ enum mgmt_req_result target_mgmt_request(int tid, uint64_t itn_id,
 	}
 
 	if (err)
-		return err;
+		return MGMT_REQ_FAILED;
 	else if (send)
 		return MGMT_REQ_DONE;
 
@@ -1581,7 +1591,6 @@ static tgtadm_err __inaccount_bind(struct target *target, int aid)
 		}
 
 		target->account.in_aids[i] = aid;
-		target->account.nr_inaccount++;
 	} else {
 		int new_max = target->account.max_inaccount << 1;
 		int *buf;
@@ -1597,6 +1606,7 @@ static tgtadm_err __inaccount_bind(struct target *target, int aid)
 		target->account.in_aids[target->account.max_inaccount] = aid;
 		target->account.max_inaccount = new_max;
 	}
+	target->account.nr_inaccount++;
 
 	return TGTADM_SUCCESS;
 }

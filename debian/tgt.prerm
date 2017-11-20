@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+# Stop tgtd if no initiators are currently connected (package removal is
+# handled by dh below). This is a bit racey but simpler and more robust than
+# setting tgtd into and out of offline mode.
+if [ -x /etc/init.d/tgt ]; then
+	if ! tgtadm --mode target --op show | grep -q Connection; then
+		invoke-rc.d tgt stop
+	fi
+fi
+
+#DEBHELPER#

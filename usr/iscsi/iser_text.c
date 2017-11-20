@@ -31,8 +31,6 @@
 #include <assert.h>
 #include <netdb.h>
 #include <sys/epoll.h>
-#include <infiniband/verbs.h>
-#include <rdma/rdma_cma.h>
 
 #include "util.h"
 #include "iscsid.h"
@@ -344,8 +342,8 @@ static int iser_login_check_params(struct iscsi_connection *iscsi_conn,
 		if (p[i].state == KEY_STATE_START && p[i].val != session_keys[i].def) {
 			if (iscsi_conn->state == STATE_LOGIN) {
 				if (i >= ISCSI_PARAM_FIRST_LOCAL) {
-					if (p[i].val > session_keys[i].def)
-						p[i].val = session_keys[i].def;
+					if (p[i].val > session_keys[i].max)
+						p[i].val = session_keys[i].max;
 					p[i].state = KEY_STATE_DONE;
 					continue;
 				}
@@ -588,6 +586,12 @@ static void iser_login_finish(struct iscsi_connection *iscsi_conn,
 		iscsi_conn->tsih = iscsi_conn->session->tsih;
 		break;
 	case SESSION_DISCOVERY:
+		err = iser_login_complete(iscsi_conn);
+		if (err) {
+			class = ISCSI_STATUS_CLS_TARGET_ERR;
+			detail = ISCSI_LOGIN_STATUS_NO_RESOURCES;
+			goto fail;
+		}
 		/* set a dummy tsih value */
 		iscsi_conn->tsih = 1;
 		break;
@@ -785,6 +789,32 @@ auth_err:
 	return;
 }
 
+
+void iser_target_list_build(struct iscsi_connection *conn, struct iser_pdu *tx_pdu, char *addr, char *name)
+{
+	struct iscsi_target *target;
+
+	list_for_each_entry(target, &iscsi_targets_list, tlist) {
+		if (name && strcmp(tgt_targetname(target->tid), name))
+			continue;
+
+		if (!target->rdma)
+			continue;
+
+		if (ip_acl(target->tid, conn))
+			continue;
+
+		if (iqn_acl(target->tid, conn))
+			continue;
+
+		if (isns_scn_access(target->tid, conn->initiator))
+			continue;
+
+		iser_text_key_add(conn, tx_pdu, "TargetName", tgt_targetname(target->tid));
+		iser_text_key_add(conn, tx_pdu, "TargetAddress", addr);
+	}
+}
+
 static void iser_text_scan(struct iscsi_connection *iscsi_conn,
 			   struct iser_pdu *rx_pdu,
 			   struct iser_pdu *tx_pdu)
@@ -800,6 +830,7 @@ static void iser_text_scan(struct iscsi_connection *iscsi_conn,
 			struct sockaddr_storage ss;
 			socklen_t slen, blen;
 			char *p, buf[NI_MAXHOST + 128];
+			int port;
 
 			if (value[0] == 0)
 				continue;
@@ -825,8 +856,15 @@ static void iser_text_scan(struct iscsi_connection *iscsi_conn,
 			if (ss.ss_family == AF_INET6)
 				 *p++ = ']';
 
-			sprintf(p, ":%d,1", ISCSI_LISTEN_PORT);
-			target_list_build(iscsi_conn, buf,
+			if (ss.ss_family == AF_INET6)
+				port = ntohs(((struct sockaddr_in6 *)
+						&ss)->sin6_port);
+			else
+				port = ntohs(((struct sockaddr_in *)
+						&ss)->sin_port);
+
+			sprintf(p, ":%d,1", port);
+			iser_target_list_build(iscsi_conn, tx_pdu, buf,
 					  strcmp(value, "All") ? value : NULL);
 		} else
 			iser_text_key_add(iscsi_conn, tx_pdu, key, "NotUnderstood");
@@ -855,6 +893,12 @@ int iser_text_exec(struct iscsi_connection *iscsi_conn,
 
 	dprintf("Text request: %d\n", iscsi_conn->state);
 	iser_text_scan(iscsi_conn, rx_pdu, tx_pdu);
+
+	if (tx_pdu->membuf.size > MAX_KEY_VALUE_PAIRS) {
+		eprintf("Text pdu size %d too big, can't send at once\n",
+			tx_pdu->membuf.size);
+		tx_pdu->membuf.size = 0;
+	}
 
 	if (req->flags & ISCSI_FLAG_CMD_FINAL)
 		rsp->flags = ISCSI_FLAG_CMD_FINAL;

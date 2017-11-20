@@ -1,3 +1,295 @@
+tgt (99:1.0.63-0ovs1.4-1ubuntu1.1) xenial; urgency=medium
+
+  * Return total read/write size to caller.
+
+ -- Chrysostomos Nanakos <cnanakos@openvstorage.com>  Wed, 28 Jun 2017 14:14:09 -0500
+
+tgt (99:1.0.63-0ovs1.3-1ubuntu1.1) xenial; urgency=medium
+
+  * OpenvStorage: Split read/write request, maximum request size
+    is set to 32KiB.
+
+ -- Chrysostomos Nanakos <cnanakos@openvstorage.com>  Tue, 27 Jun 2017 14:13:09 -0500
+
+tgt (99:1.0.63-0ovs1.2-1ubuntu1.1) xenial; urgency=medium
+
+  * d/control: Fix typo
+
+ -- Chrysostomos Nanakos <cnanakos@openvstorage.com>  Tue, 09 Jun 2017 19:13:09 -0500
+
+tgt (99:1.0.63-0ovs1.1-1ubuntu1.1) xenial; urgency=medium
+
+  * Do not build RBD block backstore
+
+ -- Chrysostomos Nanakos <cnanakos@openvstorage.com>  Tue, 25 Apr 2017 09:13:09 -0500
+
+tgt (99:1.0.63-0ovs1.0-1ubuntu1.1) xenial; urgency=medium
+
+  * OpenvStorage support
+
+ -- Chrysostomos Nanakos <cnanakos@openvstorage.com>  Fri, 21 Apr 2017 09:13:09 -0500
+
+tgt (1:1.0.63-1ubuntu1.1) xenial; urgency=medium
+
+  * debian/patches/util_strtoull_errno.patch by Stas Sergeev
+    - Fix errno handling for number * parsing (LP: #1547060)
+
+ -- Ryan Harper <ryan.harper@canonical.com>  Thu, 21 Apr 2016 09:13:09 -0500
+
+tgt (1:1.0.63-1ubuntu1) xenial; urgency=medium
+
+  * Merge from Debian (LP: #1555700). Remaining changes:
+    - Drop glusterfs support, package not in main.
+      - debian/control
+      - debian/rules
+      - debian/tests/{admin, control, daemon, storage}
+      - debian/tgt-glusterfs.install (Deleted)
+    - Disable AIO backend support: untested new feature
+      - debian/control
+      - debian/tests/storage
+  * Dropped changes
+    - debian/patches/tgtd_dont_fail_on_eacces.patch: included in new release
+
+ -- Ryan Harper <ryan.harper@canonical.com>  Wed, 09 Mar 2016 16:51:44 -0600
+
+tgt (1:1.0.63-1) unstable; urgency=medium
+
+  * New upstream release:
+    + Do not fail on EACCESS on oom_adjust; tgtd can now run in a different
+      user namespace (Closes: #813368).
+  * d/control: Use HTTPS URLs for Vcs-* fields.
+  * d/tests: Check for aio support (alongside rbd and glusterfs).
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Sun, 07 Feb 2016 03:23:45 +0200
+
+tgt (1:1.0.62-2) unstable; urgency=medium
+
+  * Enable aio support, thanks to Harald Dunkel! (Closes: #811404)
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Tue, 19 Jan 2016 11:22:35 +0200
+
+tgt (1:1.0.62-1ubuntu2) xenial; urgency=medium
+
+  * debian/patches/tgtd_dont_fail_on_eacces.patch
+    tgtd: fix root-under-userns errors when attempting oom_score_adj
+    (Closes: LP:#1518440)
+
+ -- Ryan Harper <ryan.harper@canonical.com>  Mon, 01 Feb 2016 02:18:57 -0600
+
+tgt (1:1.0.62-1ubuntu1) xenial; urgency=low
+
+  * Merge from Debian unstable (LP: #1524982, LP: #1518440).  Remaining
+    changes:
+    - Drop glusterfs support, since it is not in main.
+  * debian/upstart:
+    - Dropped, we no longer use upstart (except on Touch, where tgt
+      isn't used).  Isn't worth a delta.
+  * debian/watch:
+    - Drop merge conflict markers accidentally left in.
+  * debian/tests/*:
+    - Drop delta with Debian here, they imported our tests and improved
+      them a while back.
+  * debian/tgt.service:
+    - Drop delta here, Debian made the same change.
+  * debian/bash-completion:
+    - Dropped, Debian has the same thing, just as tgt.bash-completion.
+
+ -- Michael Terry <mterry@ubuntu.com>  Mon, 21 Dec 2015 14:20:23 -0500
+
+tgt (1:1.0.62-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Thu, 10 Dec 2015 23:44:42 +0200
+
+tgt (1:1.0.61-1) unstable; urgency=medium
+
+  * New upstream version:
+    + Fix crash when looking up removed targets
+  * Fix the `modules' DEP-8 test
+  * Allow stderr output in DEP-8 tests
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Tue, 03 Nov 2015 09:12:10 +0200
+
+tgt (1:1.0.60-1) unstable; urgency=medium
+
+  * New upstream version:
+
+    Changes in 1.0.59:
+     + iser: Clear tasks free list when closing the connection
+     + iser: Fix wrong access to the session discovery mode
+     + sheepdog: fix to update data_vdi_id after writing data object
+
+    Changes in 1.0.60:
+     + usr/libssc: Include fcntl.h for loff_t
+     + Correct the location of checkarch.sh in Makefile
+
+   * tgt.service: strip whitespace around equals signs.
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Fri, 10 Jul 2015 14:14:49 +0300
+
+tgt (1:1.0.58-1) unstable; urgency=medium
+
+  * New upstream version:
+    + bs_aio: fix failure handling
+    + sheepdog: fine grained locking in write path
+    + mgmt: Create ipc socket parent dir if does not exists
+    + iser: Fix memory leak of addrinfo struct
+    + tgtd.c: allow oom adjust failures for non-root users
+    + mgmt: change ipc socket address
+    + mgmt.c: check that the connecting user is the same as the user tgtd
+      runs as
+    + Allow overriding the IPC socket path via TGT_IPC_SOCKET
+  * d/control: remove XS-Testsuite and rely on dpkg (>= 1.17.11) to fill it in
+    automatically
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Tue, 26 May 2015 12:35:44 +0300
+
+tgt (1:1.0.57-1ubuntu2) wily; urgency=medium
+
+  * debian/tgt.service: remove spaces between key, = and value for WantedBy,
+    since it appears to confuse deb-systemd-helper.
+
+ -- Mathieu Trudel-Lapierre <mathieu-tl@ubuntu.com>  Mon, 06 Jul 2015 21:21:58 -0400
+
+tgt (1:1.0.57-1ubuntu1) wily; urgency=low
+
+  * Merge from Debian unstable.  Remaining changes:
+    - Drop glusterfs support, since it is not in main.
+    - debian/patches/fix-config-regression.patch: Dropped no longer
+      needed.
+    - debian/patches/fix_delayed_management_request.patch: Dropped
+      no longer needed.
+    - debian/patches/fix_leak_of_task_in_scsi_flag.patch: Dropped
+      no longer needed.
+
+ -- Chuck Short <zulcss@ubuntu.com>  Thu, 07 May 2015 09:29:12 -0400
+
+tgt (1:1.0.57-1) unstable; urgency=medium
+
+  * New upstream version:
+    + iser: fix tasks leak with all its resource.
+    + Set ExpCmdSn and MaxCmdSn in ISCSI_OP_R2T.
+  * Drop link-against-libsystemd.patch, merged upstream.
+  * d/copyright: bump debian/ copyright years.
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Wed, 29 Apr 2015 11:53:21 +0300
+
+tgt (1:1.0.51-1) unstable; urgency=medium
+
+  * New upstream version:
+    + sheepdog: refresh invalidated inode in update_inode() path
+    + sheepdog: set a flag indicating requests are from tgt
+    + sheepdog: optimize reloading of inode
+    + SMC: add a new volume_tag parameter to storage slots
+    + SMC: add a smc backend template with an opcode whitelist
+  * initscript: have stop always shutdown tgt, regardless of initiators being
+    connected. Thus, forcedstop and stop are the same, also forcedrestart and
+    restart. Note that during upgrades we only stop tgtd when no initiators
+    are connected. (Closes: #762068)
+  * Bump standards to 3.9.6; no changes needed.
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Mon, 13 Oct 2014 15:31:30 +0300
+
+tgt (1:1.0.50-1) unstable; urgency=medium
+
+  * New upstream version:
+    + DOCS: add an example dvd jukebox script
+    + MMC: add a dedicated backend for MMC so that supported-opcode map works
+    + sheepdog: protocol update for reviving backward compatibility
+    + sheepdog: support iSCSI multipath
+  * Initscript improvements:
+    + stop succeeds when not running (Closes: #758716)
+    + Use status_of_proc (Closes: #759585)
+    + Remove bashisms and use #!/bin/sh
+    + Use a pidfile, created by start-stop-daemon
+  * B-D on libsystemd-dev instead of libsystemd-daemon-dev and add a patch to
+    link against libsystemd. Fixes build against systemd >= 209.
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Mon, 15 Sep 2014 09:06:37 +0300
+
+tgt (1:1.0.49-1) unstable; urgency=medium
+
+  * New upstream version:
+    + rbd: allow assing a libvirt secret UUID or a cephx_key to bsopts
+    + sheepdog: add documentation
+    + sheepdog: enable write caching
+  * Build-depend on libdrmacm >= 1.0.16
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Sat, 23 Aug 2014 09:55:09 -0700
+
+tgt (1:1.0.48-1) unstable; urgency=medium
+
+  * New upstream release.
+  * d/t/control: modules test needs isolation-container
+  * Enable systemd notification support.
+    + d/rules: compile with SD_NOTIFY=1
+    + d/control: build-depend on libsystemd-daemon-dev
+    + d/tgt.service: change type to "notify" and remove the sleep statement
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Mon, 02 Jun 2014 11:01:44 +0300
+
+tgt (1:1.0.47-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Friendly takeover, encouraged by the previous maintainers. Thanks to
+    Frederik Schüler and Ben Hutchings for maintaining tgt!
+  * Update debian/ copyright information
+  * control: switch Vcs-* to collab-maint
+  * Remove redundant librados-dev build-dependency, it is pulled in by
+    librbd-dev.
+  * tgt Suggests: tgt-glusterfs, tgt-rbd
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Wed, 21 May 2014 23:19:12 +0300
+
+tgt (1:1.0.46-1) unstable; urgency=medium
+
+  * New upstream version
+    + Drop existing patches that were merged upstream
+      - CVE-2011-0001
+      - fix-tgt-admin-bashism
+      - make-tgt-setup-lun-executable
+    + Refresh conf-makefile patch
+    + Build-depend on xsltproc and docbook-xsl to build the manpages
+    + Remove FCOE and ISCSI feature parameters from debian/rules; FCOE support
+      has been dropped as of 1.0.19 and ISCSI is always built-in.
+  * Add myself to Uploaders, as discussed with Ben Hutchings.
+  * New patches
+    + use-dpkg-buildflags.patch: use hardened build flags where applicable
+      (closes: #656127)
+    + use-docbook-xsl.patch: use the XSLT stylesheets from docbook-xsl instead
+      of docbook.sf.net
+    + do-not-build-html-manpages.patch: do not build the HTML version of the
+      manpages
+  * Update package descriptions (closes: #653067)
+  * Convert debian/rules to dh sequencer
+    + Simplify debian/rules and remove DEB_BUILD_OPTIONS handling which is now
+      left up to dh
+  * Build with ceph/rados support (closes: #714868)
+    + New binary package, tgt-rbd, offering rbd support
+    + Build-Depend on librados-dev and librbd-dev
+  * Build with GlusterFS support
+    + New binary package, tgt-glusterfs, offering GlusterFS support
+    + Build-Depend on glusterfs-common
+  * New binary package, tgt-dbg, containing debug symbols for tgt
+  * Ship upstream's bash completion
+    + Build-Depend on bash-completion
+  * Add DEP-8 autopkgtests
+    + Import the DEP-8 tests from Ubuntu. Thanks to Yolanda Robla and Barry
+      Warsaw (closes: #710173, #710882)
+    + Drop the bashisms in the imported autopkgtests
+    + Drop the root-needed restriction, as it is not strictly required
+    + Add a test to check the rbd and glusterfs loadable modules
+  * Mark all packages as arch:linux-any
+  * Bump standards to 3.9.5 and compat to 9
+  * Update debian/watch to point to github
+  * debian/init: provide self (fixes lintian info)
+  * debian/copyright: update license information and convert to Format 1.0
+  * Initial systemd support
+  * Only restart tgt on upgrade when no initiators are connected
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Mon, 19 May 2014 15:41:46 +0300
+
 tgt (1:1.0.43-0ubuntu4.1~14.04.2ubuntu7) trusty; urgency=medium
 
   * Return total read/write size to caller.

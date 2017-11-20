@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+# We may have been unable to stop tgtd during prerm, so at least create the
+# pidfile for the initscript to continue working.
+if [ ! -f /run/tgtd.pid ] && pidof /usr/sbin/tgtd >/dev/null; then
+	pidof -s /usr/sbin/tgtd >/run/tgt.pid
+fi
+
+#DEBHELPER#

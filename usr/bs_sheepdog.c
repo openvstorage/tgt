@@ -66,6 +66,9 @@
 #define SD_FLAG_CMD_COW      0x02
 #define SD_FLAG_CMD_CACHE    0x04 /* Writeback mode for cache */
 #define SD_FLAG_CMD_DIRECT   0x08 /* Don't use cache */
+/* return something back while sending something to sheep */
+#define SD_FLAG_CMD_PIGGYBACK   0x10
+#define SD_FLAG_CMD_TGT   0x20
 
 #define SD_RES_SUCCESS       0x00 /* Success */
 #define SD_RES_UNKNOWN       0x01 /* Unknown error */
@@ -94,6 +97,11 @@
 #define SD_RES_JOIN_FAILED   0x18 /* Target node had failed to join sheepdog */
 #define SD_RES_HALT          0x19 /* Sheepdog is stopped serving IO request */
 #define SD_RES_READONLY      0x1A /* Object is read-only */
+#define SD_RES_INCOMPLETE    0x1B /* Object (in kv) is incomplete uploading */
+/* sheep is collecting cluster wide status, not ready for operation */
+#define SD_RES_COLLECTING_CINFO 0x1C
+ /* inode object in client is invalidated, refreshing is required */
+#define SD_RES_INODE_INVALIDATED 0x1D
 
 /*
  * Object ID rules
@@ -149,9 +157,13 @@ struct sheepdog_obj_req {
 	uint32_t data_length;
 	uint64_t oid;
 	uint64_t cow_oid;
-	uint32_t copies;
+	uint8_t copies;
+	uint8_t copy_policy;
+	uint8_t ec_index;
+	uint8_t reserved;
 	uint32_t rsvd;
-	uint64_t offset;
+	uint32_t offset;
+	uint32_t pad;
 };
 
 struct sheepdog_obj_rsp {
@@ -162,9 +174,13 @@ struct sheepdog_obj_rsp {
 	uint32_t id;
 	uint32_t data_length;
 	uint32_t result;
-	uint32_t copies;
+	uint8_t copies;
+	uint8_t reserved[3];
 	uint32_t pad[6];
 };
+
+#define LOCK_TYPE_NORMAL 0
+#define LOCK_TYPE_SHARED 1      /* for iSCSI multipath */
 
 struct sheepdog_vdi_req {
 	uint8_t proto_ver;
@@ -175,9 +191,13 @@ struct sheepdog_vdi_req {
 	uint32_t data_length;
 	uint64_t vdi_size;
 	uint32_t vdi_id;
-	uint32_t copies;
+	uint8_t copies;
+	uint8_t copy_policy;
+	uint8_t ec_index;
+	uint8_t block_size_shift;
 	uint32_t snapid;
-	uint32_t pad[3];
+	uint32_t type;
+	uint32_t pad[2];
 };
 
 struct sheepdog_vdi_rsp {
@@ -190,8 +210,25 @@ struct sheepdog_vdi_rsp {
 	uint32_t result;
 	uint32_t rsvd;
 	uint32_t vdi_id;
-	uint32_t pad[5];
+	uint32_t attr_id;
+	uint8_t copies;
+	uint8_t block_size_shift;
+	uint8_t reserved[2];
+	uint32_t pad[3];
 };
+
+/*
+ * Historical notes: previous version of sheepdog (< v0.9.0) has a limit of
+ * maximum number of children which can be created from single VDI. So the inode
+ * object has an array for storing the IDs of the child VDIs. The constant
+ * OLD_MAX_CHILDREN represents it. Current sheepdog doesn't have the limitation,
+ * so we are recycling the area (4 * OLD_MAX_CHILDREN = 4KB) for storing new
+ * metadata.
+ *
+ * users of the released area:
+ * - uint32_t btree_counter
+ */
+#define OLD_MAX_CHILDREN 1024U
 
 struct sheepdog_inode {
 	char name[SD_MAX_VDI_LEN];
@@ -201,13 +238,17 @@ struct sheepdog_inode {
 	uint64_t vm_clock_nsec;
 	uint64_t vdi_size;
 	uint64_t vm_state_size;
-	uint16_t copy_policy;
+	uint8_t  copy_policy;
+	uint8_t  store_policy;
 	uint8_t nr_copies;
 	uint8_t block_size_shift;
 	uint32_t snap_id;
 	uint32_t vdi_id;
 	uint32_t parent_vdi_id;
-	uint32_t child_vdi_id[MAX_CHILDREN];
+
+	uint32_t btree_counter;
+	uint32_t __unused[OLD_MAX_CHILDREN - 1];
+
 	uint32_t data_vdi_id[MAX_DATA_OBJS];
 };
 
@@ -320,6 +361,7 @@ static const char *sd_strerror(int err)
 		{SD_RES_JOIN_FAILED, "Target node had failed to join sheepdog"},
 		{SD_RES_HALT, "Sheepdog is stopped serving IO request"},
 		{SD_RES_READONLY, "Object is read-only"},
+		{SD_RES_INODE_INVALIDATED, "Inode object is invalidated"},
 	};
 
 	for (i = 0; i < ARRAY_SIZE(errors); ++i) {
@@ -609,31 +651,47 @@ static int find_vdi_name(struct sheepdog_access_info *ai, char *filename,
 			 uint32_t snapid, char *tag, uint32_t *vid,
 			 int for_snapshot);
 static int read_object(struct sheepdog_access_info *ai, char *buf, uint64_t oid,
-		       int copies, unsigned int datalen, uint64_t offset);
+		       int copies, unsigned int datalen, uint32_t offset,
+		       int *need_reload);
 
-static int reload_inode(struct sheepdog_access_info *ai)
+static int reload_inode(struct sheepdog_access_info *ai, int is_snapshot)
 {
-	int ret;
+	int ret, need_reload = 0;
 	char tag[SD_MAX_VDI_TAG_LEN];
 	uint32_t vid;
 
-	memset(tag, 0, sizeof(tag));
+	if (is_snapshot) {
+		memset(tag, 0, sizeof(tag));
 
-	ret = find_vdi_name(ai, ai->inode.name, CURRENT_VDI_ID, tag, &vid, 0);
-	if (ret)
-		return -1;
+		ret = find_vdi_name(ai, ai->inode.name, CURRENT_VDI_ID, tag,
+				    &vid, 0);
+		if (ret)
+			return -1;
 
-	ret = read_object(ai, (char *)&ai->inode, vid_to_vdi_oid(vid),
-			  ai->inode.nr_copies, SD_INODE_SIZE, 0);
-	if (ret)
-		return -1;
+		ret = read_object(ai, (char *)&ai->inode, vid_to_vdi_oid(vid),
+				  ai->inode.nr_copies,
+				  offsetof(struct sheepdog_inode, data_vdi_id),
+				  0, &need_reload);
+		if (ret)
+			return -1;
+	} else {
+		ret = read_object(ai, (char *)&ai->inode,
+				  vid_to_vdi_oid(ai->inode.vdi_id),
+				  ai->inode.nr_copies, SD_INODE_SIZE, 0,
+				  &need_reload);
+		if (ret)
+			return -1;
+	}
+
+	ai->min_dirty_data_idx = UINT32_MAX;
+	ai->max_dirty_data_idx = 0;
 
 	return 0;
 }
 
 static int read_write_object(struct sheepdog_access_info *ai, char *buf,
 			     uint64_t oid, int copies,
-			     unsigned int datalen, uint64_t offset,
+			     unsigned int datalen, uint32_t offset,
 			     int write, int create, uint64_t old_oid,
 			     uint16_t flags, int *need_reload)
 {
@@ -665,6 +723,7 @@ static int read_write_object(struct sheepdog_access_info *ai, char *buf,
 	hdr.data_length = datalen;
 	hdr.offset = offset;
 	hdr.copies = copies;
+	hdr.flags |= SD_FLAG_CMD_TGT;
 
 	ret = do_req(ai, (struct sheepdog_req *)&hdr, buf, &wlen, &rlen);
 	if (ret) {
@@ -675,9 +734,12 @@ static int read_write_object(struct sheepdog_access_info *ai, char *buf,
 	switch (rsp->result) {
 	case SD_RES_SUCCESS:
 		return 0;
+	case SD_RES_INODE_INVALIDATED:
+		dprintf("inode object is invalidated\n");
+		*need_reload = 2;
+		return 0;
 	case SD_RES_READONLY:
-		if (need_reload)
-			*need_reload = 1;
+		*need_reload = 1;
 		return 0;
 	default:
 		eprintf("%s (oid: %" PRIx64 ", old_oid: %" PRIx64 ")\n",
@@ -688,15 +750,15 @@ static int read_write_object(struct sheepdog_access_info *ai, char *buf,
 
 static int read_object(struct sheepdog_access_info *ai, char *buf,
 		       uint64_t oid, int copies,
-		       unsigned int datalen, uint64_t offset)
+		       unsigned int datalen, uint32_t offset, int *need_reload)
 {
 	return read_write_object(ai, buf, oid, copies, datalen, offset,
-				 0, 0, 0, 0, NULL);
+				 0, 0, 0, 0, need_reload);
 }
 
 static int write_object(struct sheepdog_access_info *ai, char *buf,
 			uint64_t oid, int copies,
-			unsigned int datalen, uint64_t offset, int create,
+			unsigned int datalen, uint32_t offset, int create,
 			uint64_t old_oid, uint16_t flags, int *need_reload)
 {
 	return read_write_object(ai, buf, oid, copies, datalen, offset, 1,
@@ -738,7 +800,7 @@ static int sd_sync(struct sheepdog_access_info *ai)
 
 static int update_inode(struct sheepdog_access_info *ai)
 {
-	int ret = 0;
+	int ret = 0, need_reload_inode = 0;
 	uint64_t oid = vid_to_vdi_oid(ai->inode.vdi_id);
 	uint32_t min, max, offset, data_len;
 
@@ -748,15 +810,28 @@ static int update_inode(struct sheepdog_access_info *ai)
 	if (max < min)
 		goto end;
 
+	goto update;
+
+reload:
+	reload_inode(ai, 0);
+	need_reload_inode = 0;
+
+update:
 	offset = sizeof(ai->inode) - sizeof(ai->inode.data_vdi_id) +
 		min * sizeof(ai->inode.data_vdi_id[0]);
 	data_len = (max - min + 1) * sizeof(ai->inode.data_vdi_id[0]);
 
 	ret = write_object(ai, (char *)&ai->inode + offset, oid,
 			   ai->inode.nr_copies, data_len, offset,
-			   0, 0, 0, NULL);
+			   0, 0, 0, &need_reload_inode);
 	if (ret < 0)
 		eprintf("sync inode failed\n");
+
+	if (need_reload_inode) {
+		dprintf("reloading inode is required in the path"
+			" of update_inode()\n");
+		goto reload;
+	}
 
 end:
 	ai->min_dirty_data_idx = UINT32_MAX;
@@ -765,28 +840,77 @@ end:
 	return ret;
 }
 
+static int is_refresh_required(struct sheepdog_access_info *ai)
+/*
+ * 0: refresh isn't required
+ * 1: refresh is required
+ */
+{
+	uint64_t inode_oid = vid_to_vdi_oid(ai->inode.vdi_id);
+	char dummy;
+	int need_reload_inode = 0;
+
+	/*
+	 * Check inode of this tgtd is invaldiated or not.
+	 * The inode object is the only one object which always exists.
+	 */
+
+	read_object(ai, &dummy, inode_oid, ai->inode.nr_copies, sizeof(dummy),
+		    0, &need_reload_inode);
+
+	return need_reload_inode;
+}
+
 static int sd_io(struct sheepdog_access_info *ai, int write, char *buf, int len,
 		 uint64_t offset)
 {
 	uint32_t vid;
-	unsigned long idx = offset / SD_DATA_OBJ_SIZE;
+	uint32_t object_size = (UINT32_C(1) << ai->inode.block_size_shift);
+	unsigned long idx = offset / object_size;
 	unsigned long max =
-		(offset + len + (SD_DATA_OBJ_SIZE - 1)) / SD_DATA_OBJ_SIZE;
-	unsigned obj_offset = offset % SD_DATA_OBJ_SIZE;
-	size_t size, rest = len;
-	int ret = 0, create = 0;
+		(offset + len + (object_size - 1)) / object_size;
+	unsigned obj_offset = offset % object_size;
+	size_t orig_size, size, rest = len;
+	int ret = 0, create;
 	uint64_t oid, old_oid;
 	uint16_t flags = 0;
 	int need_update_inode = 0, need_reload_inode;
 	int nr_copies = ai->inode.nr_copies;
+	int need_write_lock, check_idx;
 
-	if (write)
+	goto do_req;
+
+reload_in_read_path:
+	pthread_rwlock_unlock(&ai->inode_lock); /* unlock current read lock */
+
+	pthread_rwlock_wrlock(&ai->inode_lock);
+	ret = reload_inode(ai, 0);
+	if (ret) {
+		eprintf("failed to reload in read path\n");
+		goto out;
+	}
+	pthread_rwlock_unlock(&ai->inode_lock);
+
+do_req:
+	need_write_lock = 0;
+	vid = ai->inode.vdi_id;
+
+	for (check_idx = idx; check_idx < max; check_idx++) {
+		if (ai->inode.data_vdi_id[check_idx] == vid)
+			continue;
+
+		need_write_lock = 1;
+		break;
+	}
+
+	if (need_write_lock)
 		pthread_rwlock_wrlock(&ai->inode_lock);
 	else
 		pthread_rwlock_rdlock(&ai->inode_lock);
 
 	for (; idx < max; idx++) {
-		size = SD_DATA_OBJ_SIZE - obj_offset;
+		orig_size = size;
+		size = object_size - obj_offset;
 		size = min_t(size_t, size, rest);
 
 retry:
@@ -795,25 +919,24 @@ retry:
 		old_oid = 0;
 
 		if (write) {
+			/*
+			 * tgt doesn't affect semantics of caching, so we can
+			 * always turn on cache of sheep layer
+			 */
+			flags = SD_FLAG_CMD_CACHE;
+			create = 0;
+
 			if (ai->inode.data_vdi_id[idx] != vid) {
 				create = 1;
 
 				if (ai->inode.data_vdi_id[idx]) {
 					/* COW */
 					old_oid = oid;
-					flags = SD_FLAG_CMD_COW;
+					flags |= SD_FLAG_CMD_COW;
 				}
 
 				oid = vid_to_data_oid(ai->inode.vdi_id, idx);
 
-				ai->min_dirty_data_idx =
-					min_t(uint32_t,
-					      idx, ai->min_dirty_data_idx);
-				ai->max_dirty_data_idx =
-					max_t(uint32_t,
-					      idx, ai->max_dirty_data_idx);
-
-				ai->inode.data_vdi_id[idx] = vid;
 			}
 
 			need_reload_inode = 0;
@@ -823,25 +946,53 @@ retry:
 					   old_oid, flags, &need_reload_inode);
 			if (!ret) {
 				if (need_reload_inode) {
-					ret = reload_inode(ai);
+					/* If need_reload_inode is 1,
+					 * snapshot was created.
+					 * If it is 2, inode object is
+					 * invalidated
+					 */
+					ret = reload_inode(ai,
+						   need_reload_inode == 1);
 					if (!ret)
 						goto retry;
 				}
 
 				if (create) {
+					ai->min_dirty_data_idx =
+						min_t(uint32_t, idx,
+						      ai->min_dirty_data_idx);
+					ai->max_dirty_data_idx =
+						max_t(uint32_t, idx,
+						      ai->max_dirty_data_idx);
+					ai->inode.data_vdi_id[idx] = vid;
+
 					need_update_inode = 1;
 					create = 0;
 				}
 			}
 		} else {
 			if (!ai->inode.data_vdi_id[idx]) {
-				memset(buf, 0, size);
-				goto done;
+				int check = is_refresh_required(ai);
+				if (!check) {
+					memset(buf, 0, size);
+					goto done;
+				} else {
+					dprintf("reload in read path for not"\
+						" written area\n");
+					size = orig_size;
+					goto reload_in_read_path;
+				}
 			}
 
+			need_reload_inode = 0;
 			ret = read_object(ai, buf + (len - rest),
 					  oid, nr_copies, size,
-					  obj_offset);
+					  obj_offset, &need_reload_inode);
+			if (need_reload_inode) {
+				dprintf("reload in ordinal read path\n");
+				size = orig_size;
+				goto reload_in_read_path;
+			}
 		}
 
 		if (ret) {
@@ -882,6 +1033,7 @@ static int find_vdi_name(struct sheepdog_access_info *ai, char *filename,
 		hdr.opcode = SD_OP_GET_VDI_INFO;
 	else
 		hdr.opcode = SD_OP_LOCK_VDI;
+	hdr.type = LOCK_TYPE_SHARED;
 
 	wlen = SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN;
 	hdr.proto_ver = SD_PROTO_VER;
@@ -911,7 +1063,7 @@ out:
 
 static int sd_open(struct sheepdog_access_info *ai, char *filename, int flags)
 {
-	int ret = 0, i, len, fd;
+	int ret = 0, i, len, fd, need_reload = 0;
 	uint32_t vid = 0;
 	char *orig_filename;
 
@@ -1071,7 +1223,7 @@ trans_to_expect_nothing:
 	ai->max_dirty_data_idx = 0;
 
 	ret = read_object(ai, (char *)&ai->inode, vid_to_vdi_oid(vid),
-			  0, SD_INODE_SIZE, 0);
+			  0, SD_INODE_SIZE, 0, &need_reload);
 	if (ret)
 		goto out;
 
@@ -1093,6 +1245,7 @@ static void sd_close(struct sheepdog_access_info *ai)
 	memset(&hdr, 0, sizeof(hdr));
 
 	hdr.opcode = SD_OP_RELEASE_VDI;
+	hdr.type = LOCK_TYPE_SHARED;
 	hdr.vdi_id = ai->inode.vdi_id;
 
 	ret = do_req(ai, (struct sheepdog_req *)&hdr, NULL, &wlen, &rlen);
@@ -1114,7 +1267,17 @@ static int create_branch(struct sheepdog_access_info *ai)
 	struct sheepdog_vdi_req hdr;
 	struct sheepdog_vdi_rsp *rsp = (struct sheepdog_vdi_rsp *)&hdr;
 	unsigned int wlen = 0, rlen;
-	int ret;
+	int ret, need_reload = 0;
+
+	ret = pthread_rwlock_wrlock(&ai->inode_lock);
+	if (ret) {
+		eprintf("failed to get inode lock %s\n", strerror(ret));
+		return -1;
+	}
+
+	if (!ai->is_snapshot)
+		/* check again the snapshot flag to avoid race condition */
+		goto out;
 
 	memset(&hdr, 0, sizeof(hdr));
 	hdr.opcode = SD_OP_DEL_VDI;
@@ -1128,7 +1291,7 @@ static int create_branch(struct sheepdog_access_info *ai)
 		     &wlen, &rlen);
 	if (ret) {
 		eprintf("deleting snapshot VDI for creating branch failed\n");
-		return -1;
+		goto out;
 	}
 
 	memset(&hdr, 0, sizeof(hdr));
@@ -1144,19 +1307,22 @@ static int create_branch(struct sheepdog_access_info *ai)
 		     &wlen, &rlen);
 	if (ret) {
 		eprintf("creating new VDI for creating branch failed\n");
-		return -1;
+		goto out;
 	}
 
 	ret = read_object(ai, (char *)&ai->inode, vid_to_vdi_oid(rsp->vdi_id),
-			  ai->inode.nr_copies, SD_INODE_SIZE, 0);
+			  ai->inode.nr_copies, SD_INODE_SIZE, 0, &need_reload);
 	if (ret) {
 		eprintf("reloading new inode object failed");
-		return -1;
+		goto out;
 	}
 
+	ai->is_snapshot = 0;
 	dprintf("creating branch from snapshot, new VDI ID: %x\n", rsp->vdi_id);
+out:
+	pthread_rwlock_unlock(&ai->inode_lock);
 
-	return 0;
+	return ret;
 }
 
 static void bs_sheepdog_request(struct scsi_cmd *cmd)
@@ -1190,7 +1356,6 @@ static void bs_sheepdog_request(struct scsi_cmd *cmd)
 
 				break;
 			}
-			ai->is_snapshot = 0;
 		}
 
 		length = scsi_get_out_length(cmd);

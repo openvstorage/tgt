@@ -1181,6 +1181,9 @@ static int iscsi_r2t_build(struct iscsi_task *task)
 	rsp->data_offset = cpu_to_be32(task->offset);
 	/* return next statsn for this conn w/o advancing it */
 	rsp->statsn = cpu_to_be32(conn->stat_sn);
+	rsp->exp_cmdsn = cpu_to_be32(conn->session->exp_cmd_sn);
+	rsp->max_cmdsn = cpu_to_be32(conn->session->exp_cmd_sn +
+				     conn->session->max_queue_cmd);
 	rsp->ttt = (unsigned long) task;
 	length = min_t(uint32_t, task->r2t_count,
 		       conn->session_param[ISCSI_PARAM_MAX_BURST].val);
@@ -1427,6 +1430,11 @@ static int iscsi_tm_done(struct mgmt_req *mreq)
 	default:
 		task->result = ISCSI_TMF_RSP_REJECTED;
 		break;
+	}
+
+	if (task->conn->state == STATE_CLOSE) {
+		iscsi_free_task(task);
+		return 0;
 	}
 	list_add_tail(&task->c_list, &task->conn->tx_clist);
 	task->conn->tp->ep_event_modify(task->conn, EPOLLIN | EPOLLOUT);

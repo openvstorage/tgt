@@ -1,14 +1,27 @@
 #!/usr/bin/make -f
 #export DH_VERBOSE=1
 
-CFLAGS = -Wall -g
-TGT_OPTIONS = FCOE=1 ISCSI=1 ISCSI_RDMA=1 CEPH_RBD=1
+FEATURES = ISCSI_RDMA=1 SD_NOTIFY=1 OPENVSTORAGE=1
 
 %:
-	dh $@ --parallel --with bash-completion
+	dh $@ --parallel --with systemd,bash-completion
 
 override_dh_auto_build:
-	dh_auto_build -- $(TGT_OPTIONS)
+	$(MAKE) $(FEATURES)
 
 override_dh_auto_install:
-	dh_auto_install -- $(TGT_OPTIONS)
+	$(MAKE) $(FEATURES) DESTDIR=$(CURDIR)/debian/tgt install
+
+override_dh_installinit:
+	dh_installinit --no-restart-on-upgrade
+
+override_dh_install:
+	dh_install
+	rm -rf $(CURDIR)/debian/tgt/usr/lib
+
+override_dh_strip:
+	dh_strip --dbg-package=tgt-dbg
+
+.PHONY: override_dh_auto_build override_dh_auto_install \
+	override_dh_installinit override_dh_install \
+	override_dh_strip

@@ -1,2 +1,2 @@
 version=3
-https://github.com/fujita/tgt/tags .*/v(.*).tar.gz
+https://github.com/fujita/tgt/tags .*/archive/v([\d.]+)\.tar\.gz

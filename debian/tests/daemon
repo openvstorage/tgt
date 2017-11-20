@@ -1,8 +1,7 @@
-#!/bin/bash
+#!/bin/sh
 #------------
 # Testing tgt
 #------------
-set -e
 DAEMON=tgtd
 
 if pidof -x $DAEMON > /dev/null; then

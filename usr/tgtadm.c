@@ -211,7 +211,7 @@ static int ipc_mgmt_connect(int *fd)
 {
 	int err;
 	struct sockaddr_un addr;
-	char mgmt_path[256];
+	char mgmt_path[256], *path;
 
 	*fd = socket(AF_LOCAL, SOCK_STREAM, 0);
 	if (*fd < 0) {
@@ -221,7 +221,11 @@ static int ipc_mgmt_connect(int *fd)
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_LOCAL;
-	sprintf(mgmt_path, "%s.%d", TGT_IPC_NAMESPACE, control_port);
+	if ((path = getenv("TGT_IPC_SOCKET")) == NULL)
+		path = TGT_IPC_NAMESPACE;
+	snprintf(mgmt_path, sizeof(mgmt_path), "%s.%d",
+			 path, control_port);
+
 	strncpy(addr.sun_path, mgmt_path, sizeof(addr.sun_path));
 
 	err = connect(*fd, (struct sockaddr *) &addr, sizeof(addr));
@@ -234,7 +238,8 @@ static int ipc_mgmt_connect(int *fd)
 static int ipc_mgmt_rsp(int fd, struct tgtadm_req *req)
 {
 	struct tgtadm_rsp rsp;
-	int err, rest, len;
+	int err, len, done;
+	char *buf;
 
 retry:
 	err = recv(fd, &rsp, sizeof(rsp), MSG_WAITALL);
@@ -278,22 +283,31 @@ retry:
 		}
 	}
 
-	rest = rsp.len - sizeof(rsp);
-	if (!rest)
+	len = rsp.len - sizeof(rsp);
+	if (!len)
 		return 0;
 
-	while (rest) {
-		char buf[BUFSIZE];
-		memset(buf, 0, sizeof(buf));
-		len = min_t(int, sizeof(buf) - 1, rest);
-		err = read(fd, buf, len);
-		if (err <= 0) {
-			eprintf("\ncan't get the full response, %m\n");
-			return errno;
-		}
-		fputs(buf, stdout);
-		rest -= len;
+	buf = malloc(len);
+	if (!buf) {
+		fprintf(stderr, "failed to allocate %d bytes", len);
+		return -ENOMEM;
 	}
+	done = 0;
+	while (len > done) {
+		int ret;
+		ret = read(fd, buf + done, len - done);
+		if (ret < 0) {
+			if (errno == EAGAIN)
+				continue;
+			fprintf(stderr, "failed to read from tgtd, %d", errno);
+			break;
+		}
+		done += ret;
+	}
+
+	if (done == len)
+		fputs(buf, stdout);
+	free(buf);
 
 	return 0;
 }
@@ -493,6 +507,7 @@ int main(int argc, char **argv)
 	char *user, *password;
 	struct tgtadm_req adm_req = {0}, *req = &adm_req;
 	struct concat_buf b;
+	char *op_name;
 
 	op = tid = mode = -1;
 	cid = hostno = sid = 0;
@@ -503,7 +518,7 @@ int main(int argc, char **argv)
 	ac_dir = ACCOUNT_TYPE_INCOMING;
 	name = value = path = targetname = address = iqnname = NULL;
 	targetOps = portalOps = bstype = bsopts = NULL;
-	bsoflags = blocksize = user = password = NULL;
+	bsoflags = blocksize = user = password = op_name = NULL;
 	force = 0;
 
 	optind = 1;
@@ -516,6 +531,7 @@ int main(int argc, char **argv)
 			break;
 		case 'o':
 			op = str_to_op(optarg);
+			op_name = optarg;
 			break;
 		case 'm':
 			mode = str_to_mode(optarg);
@@ -600,7 +616,7 @@ int main(int argc, char **argv)
 			ac_dir = ACCOUNT_TYPE_OUTGOING;
 			break;
 		case 'C':
-			rc = str_to_int_gt(optarg, control_port, 0);
+			rc = str_to_int_ge(optarg, control_port, 0);
 			if (rc)
 				bad_optarg(rc, ch, optarg);
 			break;
@@ -653,7 +669,8 @@ int main(int argc, char **argv)
 		case OP_STATS:
 			break;
 		default:
-			eprintf("option %d not supported in system mode\n", op);
+			eprintf("operation %s not supported in system mode\n",
+				op_name);
 			exit(EINVAL);
 			break;
 		}
@@ -709,8 +726,8 @@ int main(int argc, char **argv)
 			}
 			if (!address && !iqnname && !hostno) {
 				eprintf("%s operation requires"
-					" initiator-address, initiator-name or bus\n",
-					op == OP_BIND ? "bind" : "unbind");
+					" initiator-address, initiator-name"
+					"or bus\n", op_name);
 				exit(EINVAL);
 			}
 			break;
@@ -728,7 +745,8 @@ int main(int argc, char **argv)
 			}
 			break;
 		default:
-			eprintf("option %d not supported in target mode\n", op);
+			eprintf("operation %s not supported in target mode\n",
+				op_name);
 			exit(EINVAL);
 			break;
 		}
@@ -739,7 +757,7 @@ int main(int argc, char **argv)
 		case OP_NEW:
 			rc = verify_mode_params(argc, argv, "LmoupfC");
 			if (rc) {
-				eprintf("logicalunit mode: option '-%c' is "
+				eprintf("account mode: option '-%c' is "
 					"not allowed/supported\n", rc);
 				exit(EINVAL);
 			}
@@ -752,7 +770,7 @@ int main(int argc, char **argv)
 		case OP_SHOW:
 			rc = verify_mode_params(argc, argv, "LmoC");
 			if (rc) {
-				eprintf("target mode: option '-%c' is not "
+				eprintf("account mode: option '-%c' is not "
 					"allowed/supported\n", rc);
 				exit(EINVAL);
 			}
@@ -760,7 +778,7 @@ int main(int argc, char **argv)
 		case OP_DELETE:
 			rc = verify_mode_params(argc, argv, "LmouC");
 			if (rc) {
-				eprintf("target mode: option '-%c' is not "
+				eprintf("account mode: option '-%c' is not "
 					"allowed/supported\n", rc);
 				exit(EINVAL);
 			}
@@ -768,7 +786,7 @@ int main(int argc, char **argv)
 		case OP_BIND:
 			rc = verify_mode_params(argc, argv, "LmotuOC");
 			if (rc) {
-				eprintf("target mode: option '-%c' is not "
+				eprintf("account mode: option '-%c' is not "
 					"allowed/supported\n", rc);
 				exit(EINVAL);
 			}
@@ -782,7 +800,7 @@ int main(int argc, char **argv)
 		case OP_UNBIND:
 			rc = verify_mode_params(argc, argv, "LmotuOC");
 			if (rc) {
-				eprintf("target mode: option '-%c' is not "
+				eprintf("account mode: option '-%c' is not "
 					"allowed/supported\n", rc);
 				exit(EINVAL);
 			}
@@ -794,8 +812,8 @@ int main(int argc, char **argv)
 				tid = GLOBAL_TID;
 			break;
 		default:
-			eprintf("option %d not supported in account mode\n",
-				op);
+			eprintf("operation %s not supported in account mode\n",
+				op_name);
 			exit(EINVAL);
 			break;
 		}
@@ -817,7 +835,7 @@ int main(int argc, char **argv)
 		case OP_NEW:
 			rc = verify_mode_params(argc, argv, "LmofytlbEYCS");
 			if (rc) {
-				eprintf("target mode: option '-%c' is not "
+				eprintf("logicalunit mode: option '-%c' is not "
 					  "allowed/supported\n", rc);
 				exit(EINVAL);
 			}
@@ -833,7 +851,7 @@ int main(int argc, char **argv)
 		case OP_STATS:
 			rc = verify_mode_params(argc, argv, "LmotlC");
 			if (rc) {
-				eprintf("target mode: option '-%c' is not "
+				eprintf("logicalunit mode: option '-%c' is not "
 					  "allowed/supported\n", rc);
 				exit(EINVAL);
 			}
@@ -847,8 +865,8 @@ int main(int argc, char **argv)
 			}
 			break;
 		default:
-			eprintf("option %d not supported in "
-				"logicalunit mode\n", op);
+			eprintf("operation %s not supported in "
+				"logicalunit mode\n", op_name);
 			exit(EINVAL);
 			break;
 		}
@@ -891,8 +909,8 @@ int main(int argc, char **argv)
 			}
 			break;
 		default:
-			eprintf("option %d not supported in "
-					"portal mode\n", op);
+			eprintf("operation %s not supported in portal mode\n",
+				op_name);
 			exit(EINVAL);
 			break;
 		}
@@ -905,7 +923,7 @@ int main(int argc, char **argv)
 		case OP_SHOW:
 			rc = verify_mode_params(argc, argv, "LmoC");
 			if (rc) {
-				eprintf("system mode: option '-%c' is not "
+				eprintf("lld mode: option '-%c' is not "
 					"allowed/supported\n", rc);
 				exit(EINVAL);
 			}

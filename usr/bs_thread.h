@@ -11,10 +11,6 @@ struct bs_thread_info {
 	/* protected by pending_lock */
 	struct list_head pending_list;
 
-	pthread_mutex_t startup_lock;
-
-	int stop;
-
 	request_func_t *request_fn;
 };
 

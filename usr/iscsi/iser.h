@@ -25,7 +25,18 @@
 
 #include "iscsid.h"
 
+#include <infiniband/verbs.h>
+#include <rdma/rdma_cma.h>
+
 extern short control_port;
+
+struct iser_portal {
+	struct list_head iser_portal_siblings;
+	int port;
+	int af;
+	struct rdma_cm_id *cma_listen_id;
+};
+
 
 /*
  * The IB-extended version from the kernel.  Stags and VAs are in

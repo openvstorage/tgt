@@ -1,0 +1,10 @@
+tgt (1:1.0.46-1) unstable; urgency=medium
+
+  As of 1.0.46-1, tgt in Debian supports using Ceph RBD and GlusterFS volumes
+  as backing store. The support is provided by tgt-rbd and tgt-glusterfs
+  respectively.
+
+  Also note that as of 1.0.19, upstream has dropped (the experimental) FCoE
+  target support from tgt.
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Mon, 19 May 2014 15:47:45 +0300

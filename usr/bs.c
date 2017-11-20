@@ -122,11 +122,9 @@ retry:
 	}
 
 	pthread_mutex_lock(&finished_lock);
-retest:
-	if (list_empty(&finished_list)) {
+
+	while (list_empty(&finished_list))
 		pthread_cond_wait(&finished_cond, &finished_lock);
-		goto retest;
-	}
 
 	while (!list_empty(&finished_list)) {
 		cmd = list_first_entry(&finished_list,
@@ -213,6 +211,12 @@ static void bs_sig_request_done(int fd, int events, void *data)
 	}
 }
 
+/* Unlock mutex even if thread is cancelled */
+static void mutex_cleanup(void *mutex)
+{
+	pthread_mutex_unlock(mutex);
+}
+
 static void *bs_thread_worker_fn(void *arg)
 {
 	struct bs_thread_info *info = arg;
@@ -222,27 +226,19 @@ static void *bs_thread_worker_fn(void *arg)
 	sigfillset(&set);
 	sigprocmask(SIG_BLOCK, &set, NULL);
 
-	pthread_mutex_lock(&info->startup_lock);
-	dprintf("started this thread\n");
-	pthread_mutex_unlock(&info->startup_lock);
-
-	while (!info->stop) {
+	while (1) {
 		pthread_mutex_lock(&info->pending_lock);
-	retest:
-		if (list_empty(&info->pending_list)) {
-			pthread_cond_wait(&info->pending_cond, &info->pending_lock);
-			if (info->stop) {
-				pthread_mutex_unlock(&info->pending_lock);
-				pthread_exit(NULL);
-			}
-			goto retest;
-		}
+		pthread_cleanup_push(mutex_cleanup, &info->pending_lock);
+
+		while (list_empty(&info->pending_list))
+			pthread_cond_wait(&info->pending_cond,
+					  &info->pending_lock);
 
 		cmd = list_first_entry(&info->pending_list,
 				       struct scsi_cmd, bs_list);
 
 		list_del(&cmd->bs_list);
-		pthread_mutex_unlock(&info->pending_lock);
+		pthread_cleanup_pop(1); /* Unlock pending_lock mutex */
 
 		info->request_fn(cmd);
 
@@ -267,7 +263,8 @@ static int bs_init_signalfd(void)
 
 	dir = opendir(BSDIR);
 	if (dir == NULL) {
-		eprintf("could not open backing-store module directory %s\n",
+		/* not considered an error if there are no modules */
+		dprintf("could not open backing-store module directory %s\n",
 			BSDIR);
 	} else {
 		struct dirent *dirent;
@@ -416,9 +413,7 @@ tgtadm_err bs_thread_open(struct bs_thread_info *info, request_func_t *rfn,
 
 	pthread_cond_init(&info->pending_cond, NULL);
 	pthread_mutex_init(&info->pending_lock, NULL);
-	pthread_mutex_init(&info->startup_lock, NULL);
 
-	pthread_mutex_lock(&info->startup_lock);
 	for (i = 0; i < nr_threads; i++) {
 		ret = pthread_create(&info->worker_thread[i], NULL,
 				     bs_thread_worker_fn, info);
@@ -430,22 +425,21 @@ tgtadm_err bs_thread_open(struct bs_thread_info *info, request_func_t *rfn,
 				goto destroy_threads;
 		}
 	}
-	pthread_mutex_unlock(&info->startup_lock);
 	info->nr_worker_threads = nr_threads;
 
 	return TGTADM_SUCCESS;
 destroy_threads:
-	info->stop = 1;
 
-	pthread_mutex_unlock(&info->startup_lock);
 	for (; i > 0; i--) {
-		pthread_join(info->worker_thread[i - 1], NULL);
-		eprintf("stopped the worker thread %d\n", i - 1);
+		if (info->worker_thread[i - 1]) {
+			pthread_cancel(info->worker_thread[i - 1]);
+			pthread_join(info->worker_thread[i - 1], NULL);
+			eprintf("stopped the worker thread %d\n", i - 1);
+		}
 	}
 
 	pthread_cond_destroy(&info->pending_cond);
 	pthread_mutex_destroy(&info->pending_lock);
-	pthread_mutex_destroy(&info->startup_lock);
 	free(info->worker_thread);
 
 	return TGTADM_NOMEM;
@@ -455,18 +449,14 @@ void bs_thread_close(struct bs_thread_info *info)
 {
 	int i;
 
-	info->stop = 1;
-	pthread_cond_broadcast(&info->pending_cond);
-
-	for (i = 0; i < info->nr_worker_threads && info->worker_thread[i]; i++)
+	for (i = 0; i < info->nr_worker_threads && info->worker_thread[i]; i++) {
+		pthread_cancel(info->worker_thread[i]);
 		pthread_join(info->worker_thread[i], NULL);
+	}
 
 	pthread_cond_destroy(&info->pending_cond);
 	pthread_mutex_destroy(&info->pending_lock);
-	pthread_mutex_destroy(&info->startup_lock);
 	free(info->worker_thread);
-
-	info->stop = 0;
 }
 
 int bs_thread_cmd_submit(struct scsi_cmd *cmd)

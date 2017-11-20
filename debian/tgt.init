@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/bin/sh
 ### BEGIN INIT INFO
-# Provides:          tgtd
+# Provides:          tgtd tgt
 # Required-Start:    $remote_fs $syslog
 # Required-Stop:     $remote_fs $syslog
 # Should-Start:      zfs
@@ -14,10 +14,9 @@
 DESC="target framework daemon"
 NAME=tgtd
 DAEMON=/usr/sbin/${NAME}
+PIDFILE=/run/${NAME}.pid
 
 TGTD_CONFIG=/etc/tgt/targets.conf
-
-TASK=$1
 
 . /lib/lsb/init-functions
 
@@ -27,14 +26,13 @@ start()
 {
 	log_daemon_msg "Starting $DESC" "$NAME"
 	# Start tgtd first.
-	tgtd &>/dev/null
-	RETVAL=$?
-	if [ "$RETVAL" -ne 0 ] ; then
+	if ! start-stop-daemon --start --quiet --oknodo --pidfile $PIDFILE \
+		--make-pidfile --background --exec $DAEMON -- -f; then
 		log_end_msg 1
 		exit 1
-	else
-		log_end_msg 0
 	fi
+
+	log_end_msg 0
 	# Put tgtd into "offline" state until all the targets are configured.
 	# We don't want initiators to (re)connect and fail the connection
 	# if it's not ready.
@@ -47,46 +45,18 @@ start()
 
 stop()
 {
-	if [ "$RUNLEVEL" == 0 -o "$RUNLEVEL" == 6 ] ; then
-	    forcedstop
-	fi
-	log_daemon_msg "Stopping $DESC" "$NAME"
-	# Remove all targets. It only removes targets which are not in use.
-	tgt-admin --update ALL -c /dev/null &>/dev/null
-	# tgtd will exit if all targets were removed
-	tgtadm --op delete --mode system &>/dev/null
-	RETVAL=$?
-	if [ "$RETVAL" -eq 107 ] ; then
-		if [ "$TASK" != "restart" ] ; then
-			log_end_msg 1
-			exit 1
-		else
-			log_end_msg 0
-		fi
-	elif [ "$RETVAL" -ne 0 ] ; then
-		log_end_msg 1
-		echo "Some initiators are still connected - could not stop tgtd"
-		exit 2
-	else
-		log_end_msg 0
-	fi
-	echo -n
-}
-
-forcedstop()
-{
 	# NOTE: Forced shutdown of the iscsi target may cause data corruption
 	# for initiators that are connected.
-	echo "Force-stopping target framework daemon"
+	log_daemon_msg "Force-stopping $DESC" "$NAME"
 	# Offline everything first. May be needed if we're rebooting, but
 	# expect the initiators to reconnect cleanly when we boot again
 	# (i.e. we don't want them to reconnect to a tgtd which is still
 	# working, but the target is gone).
-	tgtadm --op update --mode sys --name State -v offline &>/dev/null
+	tgtadm --op update --mode sys --name State -v offline >/dev/null 2>&1
 	RETVAL=$?
 	if [ "$RETVAL" -eq 107 ] ; then
-	    echo "tgtd is not running"
-	    [ "$TASK" != "restart" ] && exit 1
+	    # tgtd not running
+	    log_end_msg 0
 	else
 	    tgt-admin --offline ALL
 	    # Remove all targets, even if they are still in use.
@@ -95,11 +65,13 @@ forcedstop()
 	    tgtadm --op delete --mode system
 	    RETVAL=$?
 	    if [ "$RETVAL" -ne 0 ] ; then
+		log_end_msg 1
 		echo "Failed to shutdown tgtd"
 		exit 1
 	    fi
+	    log_end_msg 0
+	    rm -f $PIDFILE
 	fi
-	echo -n
 }
 
 reload()
@@ -107,7 +79,7 @@ reload()
 	log_daemon_msg "Reloading configuration of $DESC" "$NAME"
 	# Update configuration for targets. Only targets which
 	# are not in use will be updated.
-	tgt-admin --update ALL -c $TGTD_CONFIG &>/dev/null
+	tgt-admin --update ALL -c $TGTD_CONFIG >/dev/null 2>&1
 	RETVAL=$?
 	if [ "$RETVAL" -eq 107 ] ; then
 		log_end_msg 1
@@ -121,7 +93,7 @@ forcedreload()
 {
 	log_daemon_msg "Forced-reload configuration of $DESC" "$NAME"
 	# Update configuration for targets, even those in use.
-	tgt-admin --update ALL -f -c $TGTD_CONFIG &>/dev/null
+	tgt-admin --update ALL -f -c $TGTD_CONFIG >/dev/null 2>&1
 	RETVAL=$?
 	if [ "$RETVAL" -eq 107 ] ; then
 		log_end_msg 1
@@ -132,34 +104,15 @@ forcedreload()
 	fi
 }
 
-status()
-{
-	# Don't name this script "tgtd"...
-	TGTD_PROC=$(ps -C tgtd | grep -c tgtd)
-	if [ "$TGTD_PROC" -eq 2 ] ; then
-	    echo "tgtd is running. Run 'tgt-admin -s' to see detailed target info."
-	else
-	    echo "tgtd is NOT running."
-	fi
-}
-
 case $1 in
 	start)
 		start
 		;;
-	stop)
+	stop|forcedstop)
 		stop
 		;;
-	forcedstop)
-		forcedstop
-		;;
-	restart)
-		TASK=restart
+	restart|forcedrestart)
 		stop && start
-		;;
-	forcedrestart)
-		TASK=restart
-		forcedstop && start
 		;;
 	reload)
 		reload
@@ -168,7 +121,8 @@ case $1 in
 		forcedreload
 		;;
 	status)
-		status
+		status_of_proc -p $PIDFILE /usr/sbin/tgtd tgtd
+		exit $?
 		;;
 	*)
 		echo "Usage: $0 {start|stop|forcedstop|restart|forcedrestart|reload|force-reload|status}"

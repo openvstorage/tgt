@@ -212,6 +212,8 @@ static struct event_data *tgt_event_lookup(int fd)
 	return NULL;
 }
 
+static int event_need_refresh;
+
 void tgt_event_del(int fd)
 {
 	struct event_data *tev;
@@ -229,6 +231,8 @@ void tgt_event_del(int fd)
 
 	list_del(&tev->e_list);
 	free(tev);
+
+	event_need_refresh = 1;
 }
 
 int tgt_event_modify(int fd, int events)
@@ -426,6 +430,11 @@ retry:
 		for (i = 0; i < nevent; i++) {
 			tev = (struct event_data *) events[i].data.ptr;
 			tev->handler(tev->fd, events[i].events, tev->data);
+
+			if (event_need_refresh) {
+				event_need_refresh = 0;
+				goto retry;
+			}
 		}
 	}
 
@@ -537,7 +546,7 @@ int main(int argc, char **argv)
 			is_daemon = 0;
 			break;
 		case 'C':
-			ret = str_to_int_gt(optarg, control_port, 0);
+			ret = str_to_int_ge(optarg, control_port, 0);
 			if (ret)
 				bad_optarg(ret, ch, optarg);
 			break;
@@ -595,7 +604,7 @@ int main(int argc, char **argv)
 	}
 
 	err = oom_adjust();
-	if (err)
+	if (err && (errno != EACCES) && getuid() == 0)
 		exit(1);
 
 	err = nr_file_adjust();
@@ -607,6 +616,10 @@ int main(int argc, char **argv)
 		exit(1);
 
 	bs_init();
+
+#ifdef USE_SYSTEMD
+	sd_notify(0, "READY=1\nSTATUS=Starting event loop...");
+#endif
 
 	event_loop();
 

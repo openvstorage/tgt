@@ -30,18 +30,16 @@
 #include <assert.h>
 #include <netdb.h>
 #include <sys/epoll.h>
-#include <infiniband/verbs.h>
-#include <rdma/rdma_cma.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
 #include "util.h"
 #include "iscsid.h"
 #include "target.h"
-#include "iser.h"
 #include "driver.h"
 #include "scsi.h"
 #include "work.h"
+#include "iser.h"
 
 #if defined(HAVE_VALGRIND) && !defined(NDEBUG)
 #include <valgrind/memcheck.h>
@@ -53,7 +51,8 @@ static struct iscsi_transport iscsi_iser;
 
 /* global, across all devices */
 static struct rdma_event_channel *rdma_evt_channel;
-static struct rdma_cm_id *cma_listen_id;
+
+LIST_HEAD(iser_portals_list);
 
 /* accepted at RDMA layer, but not yet established */
 static LIST_HEAD(temp_conn);
@@ -78,7 +77,7 @@ char *iser_portal_addr;
  */
 #define MAX_WQE 1800
 
-#define RDMA_TRANSFER_SIZE  (512 * 1024)
+#define DEFAULT_RDMA_TRANSFER_SIZE  (512 * 1024)
 
 #define MAX_POLL_WC 32
 
@@ -99,7 +98,7 @@ static size_t buf_pool_sz_mb = DEFAULT_POOL_SIZE_MB;
 static int cq_vector = -1;
 
 static int membuf_num;
-static size_t membuf_size = RDMA_TRANSFER_SIZE;
+static size_t membuf_size = DEFAULT_RDMA_TRANSFER_SIZE;
 
 static int iser_conn_get(struct iser_conn *conn);
 static int iser_conn_getn(struct iser_conn *conn, int n);
@@ -1168,8 +1167,7 @@ int iser_login_complete(struct iscsi_connection *iscsi_conn)
 
 	/* How much data to grab in an RDMA operation, read or write */
 	/* ToDo: fix iscsi login code, broken handling of MAX_XMIT_DL */
-	iscsi_conn->session_param[ISCSI_PARAM_MAX_XMIT_DLENGTH].val =
-		RDMA_TRANSFER_SIZE;
+	iscsi_conn->session_param[ISCSI_PARAM_MAX_XMIT_DLENGTH].val = membuf_size;
 out:
 	return err;
 }
@@ -1281,6 +1279,7 @@ void iser_conn_close(struct iser_conn *conn)
 	if (err)
 		eprintf("conn:%p rdma_disconnect failed, %m\n", &conn->h);
 
+	iser_ib_clear_tx_list(conn);
 	list_del(&conn->conn_list);
 
 	tgt_remove_sched_event(&conn->sched_buf_alloc);
@@ -1646,7 +1645,27 @@ static void iser_cm_timewait_exit(struct rdma_cm_event *ev)
 	struct rdma_cm_id *cm_id = ev->id;
 	struct iser_conn *conn = cm_id->context;
 
-	eprintf("conn:%p cm_id:%p\n", &conn->h, cm_id);
+	eprintf("conn:%p refcnt:%d cm_id:%p\n",
+		&conn->h, conn->h.refcount, cm_id);
+
+	if (conn->h.state == STATE_CLOSE) {
+		/*
+		 * Tasks sitting in the conn->tx_list are stuck there after we
+		 * close the conn and since each holds a reference on the conn
+		 * we need to clean them up explicitly now.  Otherwise they will
+		 * prevent the conn from being cleaned up (since the refcount
+		 * won't reach zero).  If the conn doesn't get cleaned up, then
+		 * along with leaking the conn itself (and all its resources),
+		 * we'll also leak any rdma_buf's associated with the tasks.
+		 * Since the rdma_buf pool is associated with the iser_device
+		 * and so gets reused when a new iser_conn connection is
+		 * established, leaking too many of those bufs will eventually
+		 * clear the pool.
+		 */
+		iser_ib_clear_tx_list(conn);
+		eprintf("conn:%p refcnt:%d cm_id:%p (after cleanup)\n",
+			&conn->h, conn->h.refcount, cm_id);
+	}
 
 	/* Refcount was incremented just before accepting the connection,
 	   typically this is the last decrement and the connection will be
@@ -1728,7 +1747,6 @@ static void iser_handle_rdmacm(int fd __attribute__ ((unused)),
 static int iser_logout_exec(struct iser_task *task)
 {
 	struct iser_conn *conn = task->conn;
-	struct iscsi_session *session = conn->h.session;
 	struct iscsi_logout_rsp *rsp_bhs =
 		(struct iscsi_logout_rsp *) task->pdu.bhs;
 
@@ -1738,10 +1756,8 @@ static int iser_logout_exec(struct iser_task *task)
 	rsp_bhs->response = ISCSI_LOGOUT_SUCCESS;
 	rsp_bhs->itt = task->tag;
 	rsp_bhs->statsn = cpu_to_be32(conn->h.stat_sn++);
-
-	if (session->exp_cmd_sn == task->cmd_sn && !task->is_immediate)
-		session->exp_cmd_sn++;
-	iser_set_rsp_stat_sn(session, task->pdu.bhs);
+	rsp_bhs->exp_cmdsn = cpu_to_be32(conn->h.exp_cmd_sn);
+	rsp_bhs->max_cmdsn = cpu_to_be32(conn->h.max_cmd_sn);
 
 	task->pdu.ahssize = 0;
 	task->pdu.membuf.size = 0;
@@ -2597,7 +2613,9 @@ static int iser_task_delivery(struct iser_task *task)
 		break;
 	case ISCSI_OP_TEXT:
 		err = iser_text_exec(&conn->h, &task->pdu, &conn->text_tx_task->pdu);
+		schedule_resp_tx(conn->text_tx_task, conn);
 		break;
+
 	default:
 		eprintf("Internal error: Unexpected op:0x%x\n", task->opcode);
 		err = -EINVAL;
@@ -2829,6 +2847,8 @@ static void iser_rx_handler(struct iser_work_req *rxd)
 			break;
 		case ISCSI_OP_TEXT:
 			dprintf("text rx\n");
+			err = iser_task_delivery(task);
+			queue_task = 0;
 			break;
 		case ISCSI_OP_SNACK:
 			eprintf("Cannot handle SNACK yet\n");
@@ -3337,19 +3357,31 @@ static void iser_device_release(struct iser_device *dev)
 		eprintf("ibv_dealloc_pd failed: (errno=%d %m)\n", errno);
 }
 
-/*
- * Init entire iscsi transport.  Begin listening for connections.
- */
-static int iser_ib_init(void)
+static int iser_add_portal(struct addrinfo *res, short int port)
 {
 	int err;
-	struct sockaddr_in sock_addr;
-	short int port = iser_listen_port;
+	int afonly = 1;
+	struct sockaddr_storage sock_addr;
+	struct rdma_cm_id *cma_listen_id;
+	struct iser_portal *portal = NULL;
 
-	rdma_evt_channel = rdma_create_event_channel();
-	if (!rdma_evt_channel) {
-		eprintf("Failed to initialize RDMA; load kernel modules?\n");
-		return -1;
+	portal = zalloc(sizeof(struct iser_portal));
+	if (!portal) {
+	    eprintf("zalloc failed.\n");
+	    return -1;
+	}
+	portal->af = res->ai_family;
+	portal->port = port;
+
+	memset(&sock_addr, 0, sizeof(sock_addr));
+	if (res->ai_family == AF_INET6) {
+		((struct sockaddr_in6 *) &sock_addr)->sin6_family = AF_INET6;
+		((struct sockaddr_in6 *) &sock_addr)->sin6_port = htons(port);
+		((struct sockaddr_in6 *) &sock_addr)->sin6_addr = in6addr_any;
+	} else {
+		((struct sockaddr_in *) &sock_addr)->sin_family = AF_INET;
+		((struct sockaddr_in *) &sock_addr)->sin_port = htons(port);
+		((struct sockaddr_in *) &sock_addr)->sin_addr.s_addr = INADDR_ANY;
 	}
 
 	err = rdma_create_id(rdma_evt_channel, &cma_listen_id, NULL,
@@ -3358,11 +3390,11 @@ static int iser_ib_init(void)
 		eprintf("rdma_create_id failed, %m\n");
 		return -1;
 	}
+	portal->cma_listen_id = cma_listen_id;
 
-	memset(&sock_addr, 0, sizeof(sock_addr));
-	sock_addr.sin_family = AF_INET;
-	sock_addr.sin_port = htons(port);
-	sock_addr.sin_addr.s_addr = INADDR_ANY;
+	rdma_set_option(cma_listen_id, RDMA_OPTION_ID,
+			RDMA_OPTION_ID_AFONLY, &afonly, sizeof(afonly));
+
 	err =
 	    rdma_bind_addr(cma_listen_id, (struct sockaddr *) &sock_addr);
 	if (err) {
@@ -3383,8 +3415,51 @@ static int iser_ib_init(void)
 		return -1;
 	}
 
+        list_add(&portal->iser_portal_siblings, &iser_portals_list);
+	return err;
+}
+
+/*
+ * Init entire iscsi transport.  Begin listening for connections.
+ */
+static int iser_ib_init(void)
+{
+	int err;
+	short int port = iser_listen_port;
+	struct addrinfo hints, *res, *res0;
+	char servname[64];
+
+	rdma_evt_channel = rdma_create_event_channel();
+	if (!rdma_evt_channel) {
+		eprintf("Failed to initialize RDMA; load kernel modules?\n");
+		return -1;
+	}
+
+	memset(servname, 0, sizeof(servname));
+	snprintf(servname, sizeof(servname), "%d", port);
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE;
+
+	err = getaddrinfo(NULL, servname, &hints, &res0);
+	if (err) {
+		eprintf("unable to get address info, %m\n");
+		return -errno;
+	}
+
+	for (res = res0; res; res = res->ai_next) {
+		err = iser_add_portal(res, port);
+		if (err) {
+		    freeaddrinfo(res0);
+		    return err;
+		}
+	}
+
+	freeaddrinfo(res0);
+
 	dprintf("listening for iser connections on port %d\n", port);
-	err = tgt_event_add(cma_listen_id->channel->fd, EPOLLIN,
+	err = tgt_event_add(rdma_evt_channel->fd, EPOLLIN,
 			    iser_handle_rdmacm, NULL);
 	if (err)
 		return err;
@@ -3392,9 +3467,23 @@ static int iser_ib_init(void)
 	return err;
 }
 
-static void iser_ib_release(void)
+void iser_delete_portals(void)
 {
 	int err;
+	struct iser_portal *portal, *ptmp;
+
+	list_for_each_entry_safe(portal, ptmp, &iser_portals_list,
+				 iser_portal_siblings) {
+		err = rdma_destroy_id(portal->cma_listen_id);
+		if (err)
+			eprintf("rdma_destroy_id failed: (errno=%d %m)\n", errno);
+		list_del(&portal->iser_portal_siblings);
+		free(portal);
+	}
+}
+
+static void iser_ib_release(void)
+{
 	struct iser_device *dev, *tdev;
 
 	assert(list_empty(&iser_conn_list));
@@ -3404,13 +3493,9 @@ static void iser_ib_release(void)
 		free(dev);
 	}
 
-	if (cma_listen_id) {
-		tgt_event_del(cma_listen_id->channel->fd);
-
-		err = rdma_destroy_id(cma_listen_id);
-		if (err)
-			eprintf("rdma_destroy_id failed: (errno=%d %m)\n", errno);
-
+	if (!list_empty(&iser_portals_list)) {
+		tgt_event_del(rdma_evt_channel->fd);
+		iser_delete_portals();
 		rdma_destroy_event_channel(rdma_evt_channel);
 	}
 }
@@ -3490,6 +3575,7 @@ static const char *lld_param_nop = "nop";
 static const char *lld_param_on = "on";
 static const char *lld_param_off = "off";
 static const char *lld_param_pool_sz_mb = "pool_sz_mb";
+static const char *lld_param_buf_sz_kb = "buf_sz_kb";
 static const char *lld_param_cq_vector = "cq_vector";
 
 static int iser_param_parser(char *p)
@@ -3529,6 +3615,13 @@ static int iser_param_parser(char *p)
 			buf_pool_sz_mb = atoi(q);
 			if (buf_pool_sz_mb < 128)
 				buf_pool_sz_mb = 128;
+		} else if (!strncmp(p, lld_param_buf_sz_kb,
+				    strlen(lld_param_buf_sz_kb))) {
+			q = p + strlen(lld_param_buf_sz_kb) + 1;
+			membuf_size = atoi(q);
+			if (membuf_size < 1)
+				membuf_size = 1;
+			membuf_size = membuf_size * 1024;
 		} else if (!strncmp(p, lld_param_cq_vector,
 				    strlen(lld_param_cq_vector))) {
 			q = p + strlen(lld_param_cq_vector) + 1;

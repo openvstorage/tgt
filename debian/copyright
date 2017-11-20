@@ -1,40 +1,202 @@
-This package was debianized by Frederik Schüler <fs@debian.org> on
-Tue, 07 Aug 2007 01:33:34 +0200.
+Format: 1.0
+Upstream-Contact: FUJITA Tomonori <tomof@acm.org>
+Source: https://github.com/fujita/tgt
 
-It was downloaded from http://stgt.berlios.de/releases/
+Files: *
+Copyright: Copyright (c) 2005-2007 FUJITA Tomonori <tomof@acm.org>
+           Copyright (c) 2005-2007 Mike Christie <michaelc@cs.wisc.edu>
+License: GPL-2
 
-Upstream Authors: 
+Files: debian/*
+Copyright: Copyright © 2007-2011 Frederik Schüler <fs@debian.org>
+           Copyright © 2007-2011 Ben Hutchings <ben@decadent.org.uk>
+           Copyright © 2014-2015 Apollon Oikonomopoulos <apoikos@debian.org>
+License: GPL-2+
 
-	Mike Christie <michaelc@cs.wisc.edu>
-	FUJITA Tomonori <tomof@acm.org>
+Files: usr/bs_aio.c usr/work.c
+Copyright: Copyright (C) 2006-2007 FUJITA Tomonori <tomof@acm.org>
+           Copyright (C) 2006-2007 Mike Christie <michaelc@cs.wisc.edu>
+           Copyright (C) 2011 Alexander Nezhinsky <alexandern@mellanox.com>
+License: GPL-2
 
-Copyright: 
+Files: usr/bs_aio.h
+Copyright: Copyright (C) 2007 Davide Libenzi
+License: GPL-2+
 
-    Copyright © 2005-2007 FUJITA Tomonori and Mike Christie
+Files: usr/bs_glfs.c
+Copyright: Copyright (C) 2013 Dan Lambright <dlambrig@redhat.com>
+           Copyright (C) 2006-2007 FUJITA Tomonori <tomof@acm.org>
+           Copyright (C) 2006-2007 Mike Christie <michaelc@cs.wisc.edu>
+License: GPL-2
 
-    Digest implementations for iSCSI are
-    Copyright © 1995,1996,1998,1999,2001,2002,2003,2008
-    Free Software Foundation, Inc.
+Files: usr/bs_null.c
+Copyright: Copyright (C) 2008 Alexander Nezhinsky <nezhinsky@gmail.com>
+License: GPL-2
 
-License:
+Files: usr/bs_sg.c
+Copyright: Copyright (C) 2008 Alexander Nezhinsky <nezhinsky@gmail.com>
+           Copyright (C) 2010 Nicholas A. Bellinger <nab@linux-iscsi.org>
+License: GPL-2
 
-    This package is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, version 2 of the License.
- 
-    This package is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
- 
-    You should have received a copy of the GNU General Public License
-    along with this package; if not, write to the Free Software
-    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+Files: usr/bs_sheepdog.c
+Copyright: Copyright (C) 2010 FUJITA Tomonori <tomof@acm.org>
+           Copyright (C) 2013 Nippon Telegraph and Telephone Corporation.
+License: GPL-2
 
-On Debian systems, the complete text of the GNU General Public License
-version 2 can be found in `/usr/share/common-licenses/GPL-2'.
+Files: usr/bs_ssc.c
+Copyright: Copyright: Copyright (C) 2008 Mark Harvey markh794@gmail.com
+License: GPL-2
 
-The Debian packaging is © 2007, Frederik Schüler <fs@debian.org> and
-is licensed under the GPL, version 2 or (at your option) any later
-version.
+Files: usr/concat_buf.c
+Copyright: Copyright (C) 2011 Alexander Nezhinsky <alexandernf@mellanox.com>
+License: GPL-2
 
+Files: usr/iscsi/chap.c
+Copyright: (C) 2004 Xiranet Communications GmbH <arne.redlich@xiranet.com>
+           Copyright (C) 2002-2003 Ardis Technolgies <roman@ardistech.com>,
+           Copyright (C) 2001-2003 InterOperability Lab (IOL)
+License: GPL-2
+
+Files: usr/iscsi/conn.c
+       usr/iscsi/iscsid.h
+       usr/iscsi/target.c
+       usr/log.c
+Copyright: Copyright (C) 2002-2003 Ardis Technolgies <roman@ardistech.com>
+License: GPL-2
+
+Files: usr/iscsi/iscsi_if.h usr/iscsi/iscsi_proto.h
+Copyright: Copyright (C) 2005 Dmitry Yusupov
+           Copyright (C) 2005 Alex Aizman
+License: GPL-2+
+
+Files: usr/iscsi/iscsid.c
+Copyright: Copyright (C) 2005-2007 FUJITA Tomonori <tomof@acm.org>
+           Copyright (C) 2005-2007 Mike Christie <michaelc@cs.wisc.edu>
+           Copyright (C) 2007 Pete Wyckoff <pw@osc.edu>
+           Copyright (C) 2002-2003 Ardis Technolgies <roman@ardistech.com>
+License: GPL-2
+
+Files: usr/iscsi/iser*
+Copyright: Copyright (C) 2007 Dennis Dalessandro (dennis@osc.edu)
+           Copyright (C) 2007 Ananth Devulapalli (ananth@osc.edu)
+           Copyright (C) 2007 Pete Wyckoff (pw@osc.edu)
+           Copyright (C) 2010 Voltaire, Inc. All rights reserved.
+           Copyright (C) 2010 Alexander Nezhinsky (alexandern@voltaire.com)
+License: GPL-2
+
+Files: usr/iscsi/isns.c usr/iscsi/isns_proto.h
+Copyright: Copyright (C) 2006 FUJITA Tomonori <tomof@acm.org>
+License: GPL-2+
+
+Files: usr/iscsi/md5.*
+Copyright: Code in public domain, originally written by Colin Plumb
+License: public-domain
+
+Files: usr/iscsi/sha1.c
+Copyright: Copyright (c) Alan Smithee.
+           Copyright (c) Andrew McDonald <andrew@mcdonald.org.uk>
+           Copyright (c) Jean-Francois Dive <jef@linuxbe.org>
+License: GPL-2+
+
+Files: usr/iscsi/sha1.h
+Copyright: (c) 2004 Xiranet Communications GmbH <arne.redlich@xiranet.com>
+License: GPL-2
+
+Files: usr/libcrc32.c
+Copyright: Copyright (c) 2004 Cisco Systems, Inc.
+License: GPL-2+
+
+Files: usr/log.h
+Copyright: Copyright (C) 2004 Dmitry Yusupov, Alex Aizman
+           Copyright (C) 2002-2003 Ardis Technolgies <roman@ardistech.com>
+License: GPL-2+
+
+Files: usr/mmc.c
+Copyright: Copyright (C) 2007 FUJITA Tomonori <tomof@acm.org>
+           Copyright (C) 2007 Mike Christie <michaelc@cs.wisc.edu>
+           Copyright (C) 2008 Ronnie Sahlberg <ronniesahlberg@gmail.com>
+           Copyright (C) 2002-2003 Ardis Technolgies <roman@ardistech.com>
+           Copyright (C) 2005-2007 Ming Zhang <blackmagic02881@gmail.com>
+License: GPL-2
+
+Files: usr/osd.c
+Copyright: Copyright (C) 2006-2007 Pete Wyckoff <pw@osc.edu>
+           Copyright (C) 2007 FUJITA Tomonori <tomof@acm.org>
+           Copyright (C) 2007 Mike Christie <michaelc@cs.wisc.edu>
+License: GPL-2
+
+Files: usr/sbc.c
+Copyright: Copyright (C) 2004-2007 FUJITA Tomonori <tomof@acm.org>
+           Copyright (C) 2005-2007 Mike Christie <michaelc@cs.wisc.edu>
+           Copyright (C) 2002-2003 Ardis Technolgies <roman@ardistech.com>,
+License: GPL-2
+
+Files: usr/smc.c
+Copyright: (C) 2004-2007 FUJITA Tomonori <tomof@acm.org>
+           (C) 2005-2007 Mike Christie <michaelc@cs.wisc.edu>
+           (C) 2007      Mark Harvey <markh794@gmail.com>
+           (C) 2012      Ronnie Sahlberg <ronniesahlberg@gmail.com>
+           Copyright (C) 2002-2003 Ardis Technolgies <roman@ardistech.com>
+License: GPL-2
+
+Files: usr/smc.h
+Copyright: Copyright (C) 2007 Mark Harvey <markh794@gmail.com>
+License: GPL-2
+
+Files: usr/tgtimg.c
+Copyright: Copyright (C) 2008 Mark Harvey markh794@gmail.com
+License: GPL-2+
+
+Files: scripts/tgt-setup-lun
+Copyright: Copyright (C) 2007 Erez Zilber <erezz@voltaire.com>
+           Copyright (C) 2012 Roi Dayan <roid@mellanox.com>
+License: GPL-2
+
+Files: scripts/build-pkg.sh
+Copyright: Copyright (C) 2012 Roi Dayan <roid@mellanox.com>
+License: GPL-2
+
+Files: scripts/checkpatch.pl
+Copyright: (c) 2001, Dave Jones
+           (c) 2005, Joel Schopp <jschopp@austin.ibm.com>
+           (c) 2007,2008, Andy Whitcroft <apw@uk.ibm.com>
+           (c) 2008-2010 Andy Whitcroft <apw@canonical.com>
+License: GPL-2
+
+License: GPL-2
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License as
+ published by the Free Software Foundation, version 2 of the
+ License.
+ .
+ This program is distributed in the hope that it will be useful, but
+ WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ 02110-1301 USA
+ .
+ On Debian systems the full text of the GNU General Public License version 2
+ can be found at /usr/share/common-licenses/GPL-2.
+
+License: GPL-2+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ 02110-1301 USA
+ .
+ On Debian systems the full text of the GNU General Public License version 2
+ can be found at /usr/share/common-licenses/GPL-2.

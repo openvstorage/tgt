@@ -152,7 +152,7 @@ static tgtadm_err target_mgmt(int lld_no, struct mgmt_task *mtask)
 			p = strstr(mtask->req_buf, "initiator-name=");
 			if (p) {
 				p += strlen("initiator-name=");
-				adm_err = iqn_acl_del(req->tid, p + strlen("initiator-name="));
+				adm_err = iqn_acl_del(req->tid, p);
 				if (adm_err != TGTADM_SUCCESS) {
 					eprintf("Failed to unbind by name: %s\n", p);
 					break;
@@ -569,7 +569,7 @@ static int ipc_perm(int fd)
 		return -1;
 	}
 
-	if (cred.uid || cred.gid)
+	if (cred.uid != getuid() || cred.gid != getgid())
 		return -EPERM;
 
 	return 0;
@@ -765,8 +765,16 @@ int ipc_init(void)
 	extern short control_port;
 	int fd = 0, err;
 	struct sockaddr_un addr;
+	struct stat st = {0};
+	char *path;
 
-	sprintf(mgmt_lock_path, "%s.%d.lock", TGT_IPC_NAMESPACE, control_port);
+	if ((path = getenv("TGT_IPC_SOCKET")) == NULL) {
+		path = TGT_IPC_NAMESPACE;
+		if (stat(TGT_IPC_DIR, &st) == -1)
+			mkdir(TGT_IPC_DIR, 0755);
+	}
+
+	sprintf(mgmt_lock_path, "%s.%d.lock", path, control_port);
 	ipc_lock_fd = open(mgmt_lock_path, O_WRONLY | O_CREAT,
 			   S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	if (ipc_lock_fd < 0) {
@@ -789,7 +797,7 @@ int ipc_init(void)
 		goto close_lock_fd;
 	}
 
-	sprintf(mgmt_path, "%s.%d", TGT_IPC_NAMESPACE, control_port);
+	snprintf(mgmt_path, sizeof(mgmt_path), "%s.%d", path, control_port);
 	unlink(mgmt_path);
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_LOCAL;
